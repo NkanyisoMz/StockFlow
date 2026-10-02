@@ -27,100 +27,73 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-List<Product> products= new()
-{
-    new Product(){
-        Id = 1,
-        Name = "Shirt",
-        Sku = "TS-VNK-BLU-MED",
-        Price = 500.00m,
-        QuantityInStock = 2
-    },
-    new Product(){
-         Id = 2,
-        Name = "Coffee",
-        Sku = "ETH-DRK-12Z-BG",
-        Price = 30.00m,
-        QuantityInStock = 1
-    },
-    new Product(){
-        Id = 3,
-        Name = "Phone",
-        Sku = "PHN-APL-I15-256",
-        Price = 890.00m,
-        QuantityInStock = 1
-    },
-    new Product(){
-        Id = 4,
-        Name = "Shoes",
-        Sku = "M-RUN-BLK-090",
-        Price = 550.00m,
-        QuantityInStock = 1
-    }
-};
-
-app.MapGet("/api/products",()=>
+app.MapGet("/api/products",async (StockFlowDbContext db)=>
 {
 
-    return products;
+    return await db.Products.ToListAsync();
 });
 
 
- app.MapPost("/api/products",(Product product) =>
- {
-    if(products.Count == 0){
-        product.Id = 1;
-    }else
-    {
-        int  max = products.Max(p => p.Id);
-        product.Id = max + 1;
-
-    }
-
-    products.Add(product);
-    return Results.Created($"/api/products/{product.Id}", product);
- });
-
-app.MapGet("/api/products/{id}",(int id) =>
+app.MapPost("/api/products", async (Product product, StockFlowDbContext db) =>
 {
-    var product = products.FirstOrDefault(p => p.Id == id);
+
+    db.Products.Add(product);
+
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/products/{product.Id}", product);
+});
+
+app.MapGet("/api/products/{id}", async (int id, StockFlowDbContext db) =>
+{
+    var product = await db.Products.FindAsync(id);
 
     if (product is null)
-    {
-    return Results.NotFound($"Product with ID {id} was not found.");
-    }
+     {
+     return Results.NotFound($"Product with ID {id} was not found.");
+     }
 
     return Results.Ok(product);
 });
 
-app.MapDelete("/api/products/{id}",(int id) =>{
-    var product = products.FirstOrDefault(p => p.Id == id);
+
+app.MapDelete("/api/products/{id}",async (int id, StockFlowDbContext db) =>{
+
+    var product = await db.Products.FindAsync(id);
 
     if(product is null){
         return Results.NotFound($"Product with ID {id} doesn't exit to be deleted.");
     }
 
-    products.Remove(product);
+    db.Remove(product);
+
+    await db.SaveChangesAsync();
+
     return Results.Ok(product);
 
 });
 
-app.MapPut("/api/products/{id}", (int id, Product updatedProduct) =>
+
+app.MapPut("/api/products/{id}", async (int id, Product updatedProduct, StockFlowDbContext db) =>
 {
-    var product = products.FirstOrDefault(p => p.Id == id);
+
+    var product = await db.Products.FindAsync(id);
 
     if (product is null)
-    {
+     {
         return Results.NotFound($"Product with ID {id} doesn't exist to be updated.");
-    }
+     }
 
-    product.Name = updatedProduct.Name;
-    product.Sku = updatedProduct.Sku;
-    product.Price = updatedProduct.Price;
-    product.QuantityInStock = updatedProduct.QuantityInStock;
+     product.Name = updatedProduct.Name;
+     product.Sku = updatedProduct.Sku;
+     product.Price = updatedProduct.Price;
+     product.QuantityInStock = updatedProduct.QuantityInStock;
+
+    await db.SaveChangesAsync();
 
     return Results.NoContent();
 });
+
 
 
 app.Run();
