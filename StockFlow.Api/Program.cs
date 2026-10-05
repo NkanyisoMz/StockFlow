@@ -6,6 +6,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+builder.Services.AddControllers();
+
 var connectionString =
     builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException(
@@ -34,15 +36,24 @@ app.MapGet("/api/products",async (StockFlowDbContext db)=>
 });
 
 
-app.MapPost("/api/products", async (Product product, StockFlowDbContext db) =>
-{
+// app.MapPost("/api/products", async (CreateProductDto dto, StockFlowDbContext db) =>
+// {
 
-    db.Products.Add(product);
+//     var product = new Product
+//     {
+//         Name = dto.Name,
+//         Sku = dto.Sku,
+//         Price = dto.Price,
+//         QuantityInStock = dto.QuantityInStock
+//     };
 
-    await db.SaveChangesAsync();
 
-    return Results.Created($"/api/products/{product.Id}", product);
-});
+//     db.Products.Add(product);
+
+//     await db.SaveChangesAsync();
+
+//     return Results.Created($"/api/products/{product.Id}", product);
+// });
 
 app.MapGet("/api/products/{id}", async (int id, StockFlowDbContext db) =>
 {
@@ -93,6 +104,8 @@ app.MapPut("/api/products/{id}", async (int id, Product updatedProduct, StockFlo
 
     return Results.NoContent();
 });
+
+app.MapControllers();
 
 
 

@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-class StockFlowDbContext : DbContext
+public class StockFlowDbContext : DbContext
 {
     public StockFlowDbContext(DbContextOptions<StockFlowDbContext> options) :base(options){
 
