@@ -55,17 +55,17 @@ app.MapGet("/api/products",async (StockFlowDbContext db)=>
 //     return Results.Created($"/api/products/{product.Id}", product);
 // });
 
-app.MapGet("/api/products/{id}", async (int id, StockFlowDbContext db) =>
-{
-    var product = await db.Products.FindAsync(id);
+// app.MapGet("/api/products/{id}", async (int id, StockFlowDbContext db) =>
+// {
+//     var product = await db.Products.FindAsync(id);
 
-    if (product is null)
-     {
-     return Results.NotFound($"Product with ID {id} was not found.");
-     }
+//     if (product is null)
+//      {
+//      return Results.NotFound($"Product with ID {id} was not found.");
+//      }
 
-    return Results.Ok(product);
-});
+//     return Results.Ok(product);
+// });
 
 
 app.MapDelete("/api/products/{id}",async (int id, StockFlowDbContext db) =>{

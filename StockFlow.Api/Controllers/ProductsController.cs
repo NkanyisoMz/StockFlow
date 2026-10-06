@@ -29,7 +29,20 @@ public class ProductsController : ControllerBase
 
     await _db.SaveChangesAsync();
 
-    return Created($"/api/products/{product.Id}", product);
+    return CreatedAtAction(nameof(GetProduct),new { id = product.Id },product);
 
+    }
+
+    [HttpGet("{id}")]
+    public async Task<ActionResult<Product>> GetProduct(int id)
+    {
+        var product = await _db.Products.FindAsync(id);
+
+        if (product is null)
+        {
+        return NotFound($"Product with ID {id} was not found.");
+        }
+
+        return Ok(product);
     }
 }
