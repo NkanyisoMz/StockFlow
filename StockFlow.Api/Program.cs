@@ -29,11 +29,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.MapGet("/api/products",async (StockFlowDbContext db)=>
-{
+// app.MapGet("/api/products",async (StockFlowDbContext db)=>
+// {
 
-    return await db.Products.ToListAsync();
-});
+//     return await db.Products.ToListAsync();
+// });
 
 
 // app.MapPost("/api/products", async (CreateProductDto dto, StockFlowDbContext db) =>
@@ -85,25 +85,25 @@ app.MapDelete("/api/products/{id}",async (int id, StockFlowDbContext db) =>{
 });
 
 
-app.MapPut("/api/products/{id}", async (int id, Product updatedProduct, StockFlowDbContext db) =>
-{
+// app.MapPut("/api/products/{id}", async (int id, Product updatedProduct, StockFlowDbContext db) =>
+// {
 
-    var product = await db.Products.FindAsync(id);
+//     var product = await db.Products.FindAsync(id);
 
-    if (product is null)
-     {
-        return Results.NotFound($"Product with ID {id} doesn't exist to be updated.");
-     }
+//     if (product is null)
+//      {
+//         return Results.NotFound($"Product with ID {id} doesn't exist to be updated.");
+//      }
 
-     product.Name = updatedProduct.Name;
-     product.Sku = updatedProduct.Sku;
-     product.Price = updatedProduct.Price;
-     product.QuantityInStock = updatedProduct.QuantityInStock;
+//      product.Name = updatedProduct.Name;
+//      product.Sku = updatedProduct.Sku;
+//      product.Price = updatedProduct.Price;
+//      product.QuantityInStock = updatedProduct.QuantityInStock;
 
-    await db.SaveChangesAsync();
+//     await db.SaveChangesAsync();
 
-    return Results.NoContent();
-});
+//     return Results.NoContent();
+// });
 
 app.MapControllers();
 

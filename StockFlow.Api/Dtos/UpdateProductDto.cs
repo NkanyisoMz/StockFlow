@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-public class CreateProductDto
+public class UpdateProductDto
 {
     [Required]
     [StringLength(100)]

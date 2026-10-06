@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 [ApiController]
 [Route("api/products")]
@@ -44,5 +45,33 @@ public class ProductsController : ControllerBase
         }
 
         return Ok(product);
+    }
+
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<Product>>> GetProducts()
+    {
+        return await _db.Products.ToListAsync();
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateProduct(int id, UpdateProductDto dto)
+    {
+
+        var product = await _db.Products.FindAsync(id);
+
+        if (product is null)
+        {
+            return NotFound($"Product with ID {id} doesn't exist to be updated.");
+        }
+
+            product.Name = dto.Name;
+            product.Sku = dto.Sku;
+            product.Price = dto.Price;
+            product.QuantityInStock = dto.QuantityInStock;
+
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+
     }
 }
