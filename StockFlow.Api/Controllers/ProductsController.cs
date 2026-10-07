@@ -7,10 +7,14 @@ public class ProductsController : ControllerBase
 {
 
     private readonly StockFlowDbContext _db;
+    private readonly ProductService _productService;
 
-    public ProductsController(StockFlowDbContext db)
+    public ProductsController(
+        StockFlowDbContext db,
+        ProductService productService)
     {
         _db = db;
+        _productService = productService;
     }
 
     [HttpPost]
@@ -37,7 +41,7 @@ public class ProductsController : ControllerBase
     [HttpGet("{id}")]
     public async Task<ActionResult<Product>> GetProduct(int id)
     {
-        var product = await _db.Products.FindAsync(id);
+        var product = await _productService.GetByIdAsync(id);
 
         if (product is null)
         {
