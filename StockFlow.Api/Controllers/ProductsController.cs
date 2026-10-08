@@ -32,10 +32,18 @@ public class ProductsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<Product>> CreateProduct(CreateProductDto dto)
     {
-        var product = await _productService.CreateAsync(dto);
 
-        // The controller keeps the responsibility of formatting the 201 Created URI
-        return CreatedAtAction(nameof(GetProduct), new { id = product.Id }, product);
+        try
+        {
+            var product = await _productService.CreateAsync(dto);
+
+            return CreatedAtAction(nameof(GetProduct), new { id = product.Id }, product);
+        }
+        catch (DuplicateSkuException ex)
+        {
+            return Conflict(new {message = ex.Message});
+        }
+
     }
 
     [HttpPut("{id}")]

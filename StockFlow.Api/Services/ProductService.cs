@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 public class ProductService
 {
@@ -21,6 +22,13 @@ public class ProductService
 
     public async Task<Product> CreateAsync(CreateProductDto dto)
     {
+        var skuExists = await _db.Products.AnyAsync(p => p.Sku == dto.Sku);
+
+        if(skuExists)
+        {
+            throw new DuplicateSkuException(dto.Sku);
+        }
+
         var product = new Product
         {
             Name = dto.Name,
@@ -30,7 +38,17 @@ public class ProductService
         };
 
         _db.Products.Add(product);
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+            when (ex.InnerException is PostgresException pgEx
+            && pgEx.SqlState == PostgresErrorCodes.UniqueViolation
+            && pgEx.ConstraintName == "IX_Products_Sku")
+        {
+            throw new DuplicateSkuException(dto.Sku);
+        }
 
         return product;
     }
