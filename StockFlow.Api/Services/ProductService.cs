@@ -55,11 +55,19 @@ public class ProductService
 
     public async Task<Product?> UpdateAsync(int id, UpdateProductDto dto)
     {
+
         var product = await _db.Products.FindAsync(id);
 
         if (product is null)
         {
-            return null; // controller decide how to handle a missing product (e.g., return 404)
+            return null;
+        }
+
+        var skuExists = await _db.Products.AnyAsync(p => p.Sku == dto.Sku && p.Id != id);
+
+        if (skuExists)
+        {
+            throw new DuplicateSkuException(dto.Sku);
         }
 
         product.Name = dto.Name;
@@ -67,7 +75,17 @@ public class ProductService
         product.Price = dto.Price;
         product.QuantityInStock = dto.QuantityInStock;
 
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+            when (ex.InnerException is PostgresException pgEx
+            && pgEx.SqlState == PostgresErrorCodes.UniqueViolation
+            && pgEx.ConstraintName == "IX_Products_Sku")
+        {
+            throw new DuplicateSkuException(dto.Sku);
+        }
         return product;
     }
 

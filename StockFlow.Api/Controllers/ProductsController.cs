@@ -49,11 +49,23 @@ public class ProductsController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateProduct(int id, UpdateProductDto dto)
     {
-        var updatedProduct = await _productService.UpdateAsync(id, dto);
 
-        if (updatedProduct is null) return NotFound($"Product with ID {id} doesn't exist to be updated.");
+        try
+        {
+            var updatedProduct = await _productService.UpdateAsync(id, dto);
+            if (updatedProduct is null)
+            {
+                return NotFound($"Product with ID {id} doesn't exist to be updated.");
+            }
 
-        return NoContent();
+            return NoContent();
+
+        }
+        catch (DuplicateSkuException ex)
+        {
+            return Conflict(new {message = ex.Message});
+        }
+
     }
 
     [HttpDelete("{id}")]
