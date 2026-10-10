@@ -10,9 +10,47 @@ public class ProductService
         _db = db;
     }
 
-    public async Task<List<Product>> GetAllAsync()
+    public async Task<PagedResult<Product>> GetAllAsync(ProductQueryDto filters)
     {
-        return await _db.Products.ToListAsync();
+        IQueryable<Product> query = _db.Products;
+
+        // 1. Apply your filters first
+
+        if(!string.IsNullOrWhiteSpace(filters.Search))
+        {
+            query = query.Where(p => p.Name.ToLower().Contains(filters.Search.ToLower()));
+        }
+        if (filters.MinPrice.HasValue)
+        {
+            query = query.Where(p => p.Price >= filters.MinPrice.Value);
+        }
+
+        if (filters.MaxPrice.HasValue)
+        {
+            query = query.Where(p => p.Price <= filters.MaxPrice.Value);
+        }
+
+        // 2. Count FIRST (This hits the database to find the total filtered count)
+        int totalCount = await query.CountAsync();
+
+        // 3. Paginate SECOND into a separate variable (so you don't ruin your base query)
+        var products = await query.OrderBy(p => p.Id)
+                              .Skip((filters.Page - 1) * filters.PageSize)
+                              .Take(filters.PageSize)
+                              .ToListAsync();
+
+        // 4. Calculate total pages
+        int totalPages = (int)Math.Ceiling((double)totalCount / filters.PageSize);
+
+        // 5. Wrap all into your PagedResult package
+        return new PagedResult<Product>
+        {
+            Items = products,
+            TotalCount = totalCount,
+            TotalPages = totalPages,
+            Page = filters.Page,
+            PageSize = filters.PageSize
+        };
     }
 
     public async Task<Product?> GetByIdAsync(int id)

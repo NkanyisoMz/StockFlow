@@ -13,9 +13,9 @@ public class ProductsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Product>>> GetProducts()
+    public async Task<ActionResult<PagedResult<Product>>> GetProducts([FromQuery] ProductQueryDto query)
     {
-        var products = await _productService.GetAllAsync();
+        var products = await _productService.GetAllAsync(query);
         return Ok(products);
     }
 
