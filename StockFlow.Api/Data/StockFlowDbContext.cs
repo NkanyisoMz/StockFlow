@@ -8,6 +8,8 @@ public class StockFlowDbContext : DbContext
 
     public DbSet<Product> Products => Set<Product>();
 
+    public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -38,6 +40,20 @@ public class StockFlowDbContext : DbContext
             );
         });
 
+        modelBuilder.Entity<InventoryMovement>()
+            .HasOne(m => m.Product)
+            .WithMany()
+            .HasForeignKey(m => m.ProductId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InventoryMovement>()
+            .ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                "CK_InventoryMovements_Quantity_Positive",
+                "\"Quantity\" > 0"
+                );
+            });
 
     }
 }

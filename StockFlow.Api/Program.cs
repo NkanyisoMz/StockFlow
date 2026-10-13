@@ -21,6 +21,8 @@ builder.Services.AddDbContext<StockFlowDbContext>(options =>
 
 builder.Services.AddScoped<ProductService>();
 
+builder.Services.AddScoped<InventoryService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
