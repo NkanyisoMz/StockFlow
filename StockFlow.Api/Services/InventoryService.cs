@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 public class InventoryService
 {
     private readonly StockFlowDbContext _db;
@@ -66,4 +68,36 @@ public class InventoryService
 
         return movement;
     }
+
+    public async Task<List<InventoryMovementResponseDto>?> GetMovementHistoryAsync(int productId)
+    {
+        var productExists = await _db.Products.AnyAsync(p => p.Id == productId);
+        if (!productExists)
+        {
+            return null;
+        }
+
+        return await _db.InventoryMovements
+        // 1 & 2. Filter the table by the incoming productId parameter
+        .Where(m => m.ProductId == productId)
+
+        // 3. Sort by CreatedAt descending, followed by Id descending
+        .OrderByDescending(m => m.CreatedAt)
+        .ThenByDescending(m => m.Id)
+
+        // 4. Project (Transform) each database entity into your safe response DTO
+        .Select(m => new InventoryMovementResponseDto
+        {
+            Id = m.Id,
+            ProductId = m.ProductId,
+            Type = m.Type,
+            Quantity = m.Quantity,
+            Reason = m.Reason,
+            CreatedAt = m.CreatedAt
+        })
+
+        // 5. Execute the completed SQL query asynchronously
+        .ToListAsync();
+    }
+
 }

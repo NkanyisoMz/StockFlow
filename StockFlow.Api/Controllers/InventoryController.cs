@@ -67,4 +67,20 @@ public class InventoryController : ControllerBase
             return Conflict(new { message = ex.Message });
         }
     }
+
+    [HttpGet("products/{productId}/history")]
+    public async Task<ActionResult<List<InventoryMovementResponseDto>>> GetHistory(int productId)
+    {
+        var history = await _inventoryService.GetMovementHistoryAsync(productId);
+
+    // Product does not exist
+        if (history is null)
+        {
+            return NotFound($"Cannot retrieve history. Product with ID {productId} does not exist.");
+        }
+
+    //Product exists (returns history list, even if it is empty [] for a brand new product)
+        return Ok(history);
+    }
+
 }
