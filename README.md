@@ -29,6 +29,9 @@ The project is designed to manage products, inventory, suppliers, customers, and
 - Prevent stock-out operations when insufficient stock is available
 - Record successful inventory movements with product ID, movement type, quantity, reason, and timestamp
 - Maintain stock movement records in PostgreSQL
+- Retrieve product-specific inventory movement history in reverse chronological order
+- Return an empty movement history for existing products without recorded movements
+- Return `404 Not Found` when requesting history for a nonexistent product
 - Associate inventory movements with products through a one-to-many relationship
 - Validate stock movement requests using Data Annotations
 - Return inventory movement response DTOs without exposing EF Core navigation properties
@@ -55,6 +58,7 @@ The project is designed to manage products, inventory, suppliers, customers, and
 - Dependency injection
 - Data Transfer Objects (DTOs) for request validation and inventory responses
 - Asynchronous database operations
+- LINQ queries for filtering, sorting, and DTO projection
 - Reusable generic pagination response using `PagedResult<T>`
 - Centralized database configuration through `StockFlowDbContext`
 - Custom exceptions for duplicate SKUs and insufficient stock
@@ -90,6 +94,7 @@ The project is designed to manage products, inventory, suppliers, customers, and
 |---|---|---|
 | POST | `/api/inventory/stock-in` | Increase product stock and record an inventory movement |
 | POST | `/api/inventory/stock-out` | Decrease product stock and record an inventory movement |
+| GET | `/api/inventory/products/{productId}/history` | Retrieve inventory movement history for a specific product |
 
 ### Search, Filtering, and Pagination
 
@@ -190,6 +195,47 @@ Example response:
 }
 ```
 
+### Inventory Movement History
+
+**GET** `/api/inventory/products/{productId}/history`
+
+Retrieves the inventory movement history for a specific product, ordered by the most recent movement first.
+
+Example request:
+
+```http
+GET /api/inventory/products/3/history
+```
+
+Example response:
+
+```json
+[
+  {
+    "id": 2,
+    "productId": 3,
+    "type": 1,
+    "quantity": 5,
+    "reason": "Customer purchase",
+    "createdAt": "2026-10-13T19:10:10.630856Z"
+  },
+  {
+    "id": 1,
+    "productId": 3,
+    "type": 0,
+    "quantity": 15,
+    "reason": "New shipment received",
+    "createdAt": "2026-10-13T02:42:04.576978Z"
+  }
+]
+```
+
+**Response behavior:**
+
+- `200 OK` — Product exists and its movement history is returned
+- `200 OK` with `[]` — Product exists but has no recorded movements
+- `404 Not Found` — Product does not exist
+
 **Movement Types:**
 
 - `0` — StockIn
@@ -221,7 +267,7 @@ StockFlow validates requests before performing database operations.
 
 ### Inventory Validation
 
-- Positive product ID
+- Positive product ID for stock movement requests
 - Positive movement quantity
 - Required movement reason with a maximum length of 200 characters
 - Product existence verification
@@ -339,7 +385,7 @@ Use the local URL displayed in the terminal.
 - [x] Insufficient-stock validation
 - [x] Inventory movement persistence
 - [x] Inventory request and response DTOs
-- [ ] Inventory movement history endpoint
+- [x] Inventory movement history endpoint
 - [ ] Stock limits and overflow protection
 - [ ] Concurrency protection for simultaneous inventory updates
 - [ ] Restrict direct stock quantity changes through Product CRUD
@@ -377,8 +423,10 @@ StockFlow is under active development.
 
 The **Product Management module** is implemented, including CRUD operations, PostgreSQL persistence, request validation, database constraints, search, filtering, and pagination.
 
-The **Inventory Management module** is partially implemented. Stock-In and Stock-Out operations are functional and have been tested against PostgreSQL. Successful operations update product quantities and persist corresponding inventory movement records. Insufficient-stock requests are rejected with an HTTP `409 Conflict` response.
+The **Inventory Management module** now supports Stock-In, Stock-Out, and product-specific inventory movement history. These operations have been tested against PostgreSQL. Successful stock changes update product quantities and persist movement records. The history endpoint retrieves movements in reverse chronological order and distinguishes between products with no movement history and nonexistent products.
 
-The next development steps focus on inventory movement history, stock consistency, concurrency protection, and automated testing.
+Insufficient-stock requests are rejected with an HTTP `409 Conflict` response.
+
+The next development priorities are stock limits, inventory consistency, concurrency protection, and automated testing.
 
 Subsequent phases will introduce supplier and customer management, order processing, authentication and authorization, a React frontend, and deployment.
