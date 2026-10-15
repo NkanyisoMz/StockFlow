@@ -72,7 +72,7 @@ public class ProductService
             Name = dto.Name,
             Sku = dto.Sku,
             Price = dto.Price,
-            QuantityInStock = dto.QuantityInStock
+            QuantityInStock = 0
         };
 
         _db.Products.Add(product);
@@ -111,7 +111,6 @@ public class ProductService
         product.Name = dto.Name;
         product.Sku = dto.Sku;
         product.Price = dto.Price;
-        product.QuantityInStock = dto.QuantityInStock;
 
         try
         {
