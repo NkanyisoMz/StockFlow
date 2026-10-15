@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 
 public class InventoryService
 {
+    private const int MaxStock = 100_000;
+
     private readonly StockFlowDbContext _db;
 
     public InventoryService(StockFlowDbContext db)
@@ -17,6 +19,12 @@ public class InventoryService
         if(product == null)
         {
             return null;
+        }
+
+        if(dto.Quantity > MaxStock - product.QuantityInStock)
+        {
+            throw new StockLimitExceededException($"Stock limit exceeded. Maximum: {MaxStock}, " +
+              $"Current: {product.QuantityInStock}, Requested: {dto.Quantity}.");
         }
 
         product.QuantityInStock += dto.Quantity;

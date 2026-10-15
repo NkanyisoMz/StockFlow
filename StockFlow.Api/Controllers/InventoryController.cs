@@ -14,7 +14,9 @@ public class InventoryController : ControllerBase
     [HttpPost("stock-in")]
     public async Task<ActionResult<InventoryMovementResponseDto>> StockInAsync(StockMovementDto dto)
     {
-        // 1. Call the service to process the movement
+        try
+        {
+            // 1. Call the service to process the movement
         var movement = await _inventoryService.StockInAsync(dto);
 
         // Scenario: Product does not exist
@@ -35,6 +37,12 @@ public class InventoryController : ControllerBase
 
         // Scenario: Product exists and stock is updated
         return Ok(response);
+        }
+        catch(StockLimitExceededException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+
     }
 
     [HttpPost("stock-out")]

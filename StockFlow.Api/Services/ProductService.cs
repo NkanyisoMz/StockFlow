@@ -5,6 +5,7 @@ public class ProductService
 {
     private readonly StockFlowDbContext _db;
 
+
     public ProductService(StockFlowDbContext db)
     {
         _db = db;
