@@ -88,7 +88,7 @@ namespace StockFlow.Api.Migrations
                         {
                             t.HasCheckConstraint("CK_Products_Price_NonNegative", "\"Price\" >= 0");
 
-                            t.HasCheckConstraint("CK_Products_Quantity_NonNegative", "\"QuantityInStock\" >= 0");
+                            t.HasCheckConstraint("CK_Products_QuantityInStock_Range", "\"QuantityInStock\" >= 0 AND \"QuantityInStock\" <= 100000");
                         });
                 });
 

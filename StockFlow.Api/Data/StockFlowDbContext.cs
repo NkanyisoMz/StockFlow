@@ -35,9 +35,8 @@ public class StockFlowDbContext : DbContext
             );
 
             t.HasCheckConstraint(
-            "CK_Products_Quantity_NonNegative",
-            "\"QuantityInStock\" >= 0"
-            );
+            "CK_Products_QuantityInStock_Range",
+            "\"QuantityInStock\" >= 0 AND \"QuantityInStock\" <= 100000");
         });
 
         modelBuilder.Entity<InventoryMovement>()

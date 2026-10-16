@@ -14,7 +14,12 @@ public class InventoryService
     public async Task<InventoryMovement?> StockInAsync(
         StockMovementDto dto)
     {
-        var product = await _db.Products.FindAsync(dto.ProductId);
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+
+        var product = await _db.Products
+        .FromSqlInterpolated(
+        $"SELECT * FROM \"Products\" WHERE \"Id\" = {dto.ProductId} FOR UPDATE")
+        .SingleOrDefaultAsync();
 
         if(product == null)
         {
@@ -41,12 +46,19 @@ public class InventoryService
 
         await _db.SaveChangesAsync();
 
+        await transaction.CommitAsync();
+
         return movement;
     }
 
     public async Task<InventoryMovement?> StockOutAsync(StockMovementDto dto)
     {
-        var product = await _db.Products.FindAsync(dto.ProductId);
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+
+        var product = await _db.Products
+        .FromSqlInterpolated(
+        $"SELECT * FROM \"Products\" WHERE \"Id\" = {dto.ProductId} FOR UPDATE")
+        .SingleOrDefaultAsync();
 
         if (product == null)
         {
@@ -73,6 +85,8 @@ public class InventoryService
         _db.InventoryMovements.Add(movement);
 
         await _db.SaveChangesAsync();
+
+        await transaction.CommitAsync();
 
         return movement;
     }
