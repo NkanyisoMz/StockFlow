@@ -8,6 +8,8 @@ public class StockFlowDbContext : DbContext
 
     public DbSet<Product> Products => Set<Product>();
 
+    public DbSet<Customer> Customers => Set<Customer>();
+
     public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -54,5 +56,20 @@ public class StockFlowDbContext : DbContext
                 );
             });
 
+        modelBuilder.Entity<Customer>(entity =>
+       {
+        entity.Property(c => c.Name)
+        .IsRequired()
+        .HasMaxLength(100);
+
+         entity.Property(c => c.Email)
+        .IsRequired()
+        .HasMaxLength(150);
+
+        entity.HasIndex(c => c.Email)
+        .IsUnique();
+        });
+
     }
+
 }

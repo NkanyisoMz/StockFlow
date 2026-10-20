@@ -6,7 +6,6 @@ public class ProductsController : ControllerBase
 {
     private readonly ProductService _productService;
 
-    // Inject the service instead of the DbContext
     public ProductsController(ProductService productService)
     {
         _productService = productService;

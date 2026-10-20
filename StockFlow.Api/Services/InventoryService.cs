@@ -100,14 +100,12 @@ public class InventoryService
         }
 
         return await _db.InventoryMovements
-        // 1 & 2. Filter the table by the incoming productId parameter
+
         .Where(m => m.ProductId == productId)
 
-        // 3. Sort by CreatedAt descending, followed by Id descending
         .OrderByDescending(m => m.CreatedAt)
         .ThenByDescending(m => m.Id)
 
-        // 4. Project (Transform) each database entity into your safe response DTO
         .Select(m => new InventoryMovementResponseDto
         {
             Id = m.Id,
@@ -118,7 +116,6 @@ public class InventoryService
             CreatedAt = m.CreatedAt
         })
 
-        // 5. Execute the completed SQL query asynchronously
         .ToListAsync();
     }
 

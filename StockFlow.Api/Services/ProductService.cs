@@ -15,7 +15,6 @@ public class ProductService
     {
         IQueryable<Product> query = _db.Products;
 
-        // 1. Apply your filters first
 
         if(!string.IsNullOrWhiteSpace(filters.Search))
         {
@@ -31,19 +30,15 @@ public class ProductService
             query = query.Where(p => p.Price <= filters.MaxPrice.Value);
         }
 
-        // 2. Count FIRST (This hits the database to find the total filtered count)
         int totalCount = await query.CountAsync();
 
-        // 3. Paginate SECOND into a separate variable (so you don't ruin your base query)
         var products = await query.OrderBy(p => p.Id)
                               .Skip((filters.Page - 1) * filters.PageSize)
                               .Take(filters.PageSize)
                               .ToListAsync();
 
-        // 4. Calculate total pages
         int totalPages = (int)Math.Ceiling((double)totalCount / filters.PageSize);
 
-        // 5. Wrap all into your PagedResult package
         return new PagedResult<Product>
         {
             Items = products,
@@ -139,6 +134,6 @@ public class ProductService
         _db.Products.Remove(product);
         await _db.SaveChangesAsync();
 
-        return product; // Return the deleted item in case the client wants to see what was removed
+        return product;
     }
 }

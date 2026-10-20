@@ -16,10 +16,8 @@ public class InventoryController : ControllerBase
     {
         try
         {
-            // 1. Call the service to process the movement
-        var movement = await _inventoryService.StockInAsync(dto);
+            var movement = await _inventoryService.StockInAsync(dto);
 
-        // Scenario: Product does not exist
         if (movement is null)
         {
             return NotFound($"Product with ID {dto.ProductId} does not exist.");
@@ -35,7 +33,6 @@ public class InventoryController : ControllerBase
             CreatedAt = movement.CreatedAt
         };
 
-        // Scenario: Product exists and stock is updated
         return Ok(response);
         }
         catch(StockLimitExceededException ex)
@@ -81,13 +78,11 @@ public class InventoryController : ControllerBase
     {
         var history = await _inventoryService.GetMovementHistoryAsync(productId);
 
-    // Product does not exist
         if (history is null)
         {
             return NotFound($"Cannot retrieve history. Product with ID {productId} does not exist.");
         }
 
-    //Product exists (returns history list, even if it is empty [] for a brand new product)
         return Ok(history);
     }
 
