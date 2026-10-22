@@ -98,7 +98,8 @@ namespace StockFlow.Api.Migrations
                         .HasColumnType("character varying(100)");
 
                     b.Property<decimal>("Price")
-                        .HasColumnType("numeric");
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
 
                     b.Property<int>("QuantityInStock")
                         .HasColumnType("integer");

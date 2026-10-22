@@ -75,26 +75,36 @@ public class OrderService
 
         decimal runningTotal = 0m;
 
-        checked
+        try
         {
-            foreach (var itemDto in dto.Items)
+            checked
             {
-                var dbProduct = productDictionary[itemDto.ProductId];
-
-                decimal unitPrice = dbProduct.Price;
-                decimal lineTotal = itemDto.Quantity * unitPrice;
-
-                var orderItem = new OrderItem
+                foreach (var itemDto in dto.Items)
                 {
-                    ProductId = itemDto.ProductId,
-                    Quantity = itemDto.Quantity,
-                    UnitPrice = unitPrice
-                };
+                    var dbProduct = productDictionary[itemDto.ProductId];
 
-                order.OrderItems.Add(orderItem);
-                runningTotal += lineTotal;
+                    decimal unitPrice = dbProduct.Price;
+                    decimal lineTotal = itemDto.Quantity * unitPrice;
+
+                    var orderItem = new OrderItem
+                    {
+                        ProductId = itemDto.ProductId,
+                        Quantity = itemDto.Quantity,
+                        UnitPrice = unitPrice
+                    };
+
+                    order.OrderItems.Add(orderItem);
+                    runningTotal += lineTotal;
+                }
             }
+
         }
+        catch (OverflowException)
+        {
+            throw new InvalidOrderException(
+                "Order amount exceeds the supported monetary range.");
+        }
+
 
         if (runningTotal > 9999999999999999.99m)
         {

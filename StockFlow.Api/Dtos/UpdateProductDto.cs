@@ -10,7 +10,6 @@ public class UpdateProductDto
     [StringLength(50)]
     public required string Sku {get; set;}
 
-    [Range(0, 1_000_000)]
-    public decimal Price {get; set;}
+    public decimal Price { get; set; }
 
 }

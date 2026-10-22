@@ -63,6 +63,16 @@ public class ProductService
             throw new DuplicateSkuException(dto.Sku);
         }
 
+        const decimal MaxPrice = 9999999999999999.99m;
+
+        if (dto.Price < 0 ||
+            dto.Price > MaxPrice ||
+            decimal.Round(dto.Price, 2) != dto.Price)
+        {
+            throw new ArgumentException(
+                "Price must be non-negative, have at most two decimal places, and fit the supported monetary range.");
+        }
+
         var product = new Product
         {
             Name = dto.Name,
@@ -102,6 +112,16 @@ public class ProductService
         if (skuExists)
         {
             throw new DuplicateSkuException(dto.Sku);
+        }
+
+        const decimal MaxPrice = 9999999999999999.99m;
+
+        if (dto.Price < 0 ||
+            dto.Price > MaxPrice ||
+            decimal.Round(dto.Price, 2) != dto.Price)
+        {
+            throw new ArgumentException(
+                "Price must be non-negative, have at most two decimal places, and fit the supported monetary range.");
         }
 
         product.Name = dto.Name;

@@ -34,6 +34,10 @@ public class StockFlowDbContext : DbContext
         .HasMaxLength(50);
 
         modelBuilder.Entity<Product>()
+        .Property(p => p.Price)
+        .HasPrecision(18, 2);
+
+        modelBuilder.Entity<Product>()
         .ToTable(t =>
         {
             t.HasCheckConstraint(
