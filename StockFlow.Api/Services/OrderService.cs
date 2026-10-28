@@ -120,4 +120,114 @@ public class OrderService
         return order;
 
     }
+
+    public async Task<Order> ConfirmOrderAsync(int orderId)
+    {
+        await using var transaction =
+            await _db.Database.BeginTransactionAsync();
+
+        var order = await _db.Orders
+            .FromSqlInterpolated(
+            $"SELECT * FROM \"Orders\" WHERE \"Id\" = {orderId} FOR UPDATE")
+            .SingleOrDefaultAsync();
+
+        if (order is null)
+        {
+            throw new OrderNotFoundException(
+                $"Order with ID {orderId} was not found.");
+        }
+
+        if (order.Status != OrderStatus.Pending)
+        {
+            throw new InvalidOrderException(
+                $"Order {orderId} cannot be confirmed because its status is {order.Status}.");
+        }
+
+        order.OrderItems = await _db.OrderItems
+            .Where(item => item.OrderId == orderId)
+            .OrderBy(item => item.ProductId)
+            .ToListAsync();
+
+        if (order.OrderItems.Count == 0)
+        {
+            throw new InvalidOrderException(
+                $"Order {orderId} cannot be confirmed because it contains no items.");
+        }
+
+        var sortedProductIds = order.OrderItems
+            .Select(item => item.ProductId)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToList();
+
+
+        var lockedProducts = new Dictionary<int, Product>();
+
+        foreach (var productId in sortedProductIds)
+        {
+            var product = await _db.Products
+                .FromSqlInterpolated(
+                $"SELECT * FROM \"Products\" WHERE \"Id\" = {productId} FOR UPDATE")
+                .SingleOrDefaultAsync();
+
+            if (product is null)
+            {
+                throw new ProductNotFoundException(
+                    $"Product with ID {productId} was not found.");
+            }
+
+            lockedProducts.Add(product.Id, product);
+        }
+
+        if (order.OrderItems.Any(item => item.Quantity <= 0))
+        {
+            throw new InvalidOrderException(
+                $"Order {orderId} contains invalid item quantities.");
+        }
+
+        var requiredQuantities = order.OrderItems
+            .GroupBy(item => item.ProductId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Sum(item => item.Quantity)
+            );
+
+        foreach (var (productId, requiredQuantity) in requiredQuantities)
+        {
+            var product = lockedProducts[productId];
+
+            if (requiredQuantity > product.QuantityInStock)
+            {
+                throw new InsufficientStockException(
+                    $"Insufficient stock for product {productId}. " +
+                    $"Available: {product.QuantityInStock}, " +
+                    $"Requested: {requiredQuantity}.");
+            }
+        }
+
+        foreach (var (productId, requiredQuantity) in requiredQuantities)
+        {
+            var product = lockedProducts[productId];
+
+            product.QuantityInStock -= requiredQuantity;
+
+            var movement = new InventoryMovement
+            {
+                ProductId = productId,
+                Type = MovementType.StockOut,
+                Quantity = requiredQuantity,
+                Reason = $"Order #{orderId} confirmed"
+            };
+
+            _db.InventoryMovements.Add(movement);
+        }
+
+        order.Status = OrderStatus.Confirmed;
+
+        await _db.SaveChangesAsync();
+
+        await transaction.CommitAsync();
+
+        return order;
+    }
 }

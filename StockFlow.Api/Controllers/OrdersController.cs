@@ -53,5 +53,51 @@ public class OrdersController : ControllerBase
             return BadRequest(new { message = ex.Message });
         }
     }
+
+
+    [HttpPost("{id}/confirm")]
+    public async Task<ActionResult<OrderResponseDto>> ConfirmOrder(int id)
+    {
+        try
+        {
+
+            var order = await _orderService.ConfirmOrderAsync(id);
+
+
+            var responseDto = new OrderResponseDto
+            {
+                Id = order.Id,
+                CustomerId = order.CustomerId,
+                OrderDate = order.OrderDate,
+                Status = order.Status,
+                TotalAmount = order.TotalAmount,
+                Items = order.OrderItems.Select(oi => new OrderItemResponseDto
+                {
+                    Id = oi.Id,
+                    ProductId = oi.ProductId,
+                    Quantity = oi.Quantity,
+                    UnitPrice = oi.UnitPrice
+                }).ToList()
+            };
+
+            return Ok(responseDto);
+        }
+        catch (OrderNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ProductNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOrderException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+        catch (InsufficientStockException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+    }
 }
 
