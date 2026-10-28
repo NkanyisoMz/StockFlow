@@ -1,122 +1,123 @@
 # StockFlow
 
-StockFlow is an **Order and Inventory Management REST API** built with **C#, ASP.NET Core (.NET 10), Entity Framework Core, and PostgreSQL**.
+**StockFlow** is an Order and Inventory Management System under active development. Its backend is a REST API built with **C#, ASP.NET Core (.NET 10), Entity Framework Core, and PostgreSQL**. A **React + TypeScript** frontend is planned to provide a complete full-stack experience.
 
-The project is designed to manage products, inventory, suppliers, customers, and orders while demonstrating practical backend development concepts such as RESTful API design, layered architecture, dependency injection, database persistence, input validation, business logic, data integrity, transactions, and concurrency control.
+StockFlow manages products, inventory, customers, and orders. It demonstrates RESTful API design, controller/service separation, dependency injection, relational data modelling, input validation, business rules, database integrity, transactions, and concurrency control.
 
-**Project Status:** Active Development
+**Project status:** Active development — product management, inventory management, customer management, order creation, and transactional order confirmation are implemented. Order retrieval, cancellation, automated tests, authentication, frontend development, and deployment are upcoming.
 
 ## Features
 
 ### Product Management
 
-- Create, retrieve, update, and delete products
-- Retrieve individual products by ID
-- Search products by name (case-insensitive)
-- Filter products by minimum and maximum price
-- Combine search and price filters
-- Paginate product results with configurable page number and page size
-- Return pagination metadata including total count and total pages
-- Validate incoming requests using Data Annotations
-- Validate price ranges using `IValidatableObject`
-- Prevent duplicate product SKUs
-- Initialize new products with zero stock
-- Restrict product updates to name, SKU, and price
-- Require inventory operations for stock quantity changes
-- Return appropriate HTTP status codes and error responses
+- Create, retrieve, update, and delete products.
+- Search products by name (case-insensitive), filter by minimum and maximum price, and combine filters.
+- Paginate results with page number, page size, total count, and total pages.
+- Enforce unique SKUs and maximum lengths (100 characters for names, 50 for SKUs).
+- Create products with zero stock; update name, SKU, and price without directly changing stock.
+- Validate prices as non-negative amounts with at most two decimal places and within the supported `numeric(18,2)` range.
+- Return appropriate HTTP status codes for invalid requests, missing products, and SKU conflicts.
 
 ### Inventory Management
 
-- Increase available product stock through Stock-In operations
-- Decrease available product stock through Stock-Out operations
-- Prevent Stock-Out when insufficient inventory is available
-- Enforce a maximum stock quantity of **100,000 units per product**
-- Prevent integer overflow during Stock-In by validating available capacity before addition
-- Reject Stock-In requests that would exceed the maximum stock limit
-- Record successful inventory movements with product ID, movement type, quantity, reason, and timestamp
-- Maintain inventory movement history in PostgreSQL
-- Retrieve product-specific movement history in reverse chronological order
-- Return an empty history for existing products without movements
-- Return `404 Not Found` when requesting history for a nonexistent product
-- Associate inventory movements with products through a foreign key relationship
-- Validate stock movement requests using Data Annotations
-- Return inventory movement response DTOs without exposing EF Core navigation properties
-- Use explicit database transactions for stock updates and movement creation
-- Use PostgreSQL row-level locking to coordinate concurrent inventory operations
-- Return `409 Conflict` for insufficient stock or exceeded stock limits
+- Receive stock (`StockIn`) and issue stock (`StockOut`) through dedicated endpoints.
+- Prevent insufficient-stock deductions and enforce a maximum of **100,000 units per product**.
+- Validate capacity before adding stock to avoid integer overflow.
+- Persist inventory movements with product ID, type, quantity, reason, and timestamp.
+- Retrieve product-specific movement history in reverse chronological order.
+- Return `200 OK` with an empty array for existing products without movements, or `404 Not Found` for nonexistent products.
+- Use EF Core transactions and PostgreSQL `SELECT ... FOR UPDATE` row locks to coordinate concurrent stock changes.
 
-### Concurrency and Transaction Safety
+### Customer Management
 
-StockFlow uses PostgreSQL transactions and row-level locking to protect inventory consistency during simultaneous requests.
+- Create, retrieve, and update customers.
+- Store customer name, email, and creation timestamp.
+- Enforce unique customer emails and validate customer input.
+- Associate orders with existing customers through a foreign key.
 
-Both Stock-In and Stock-Out operations follow this sequence:
+### Order Management
 
-1. Begin a database transaction.
-2. Retrieve and lock the product using `SELECT ... FOR UPDATE`.
-3. Validate the requested stock operation.
-4. Update the product's available quantity.
-5. Create the corresponding inventory movement.
-6. Persist changes using EF Core.
-7. Commit the transaction.
+- Create pending orders containing one or more products.
+- Verify the customer and referenced products exist; reject invalid quantities and duplicate product IDs in order creation.
+- Capture each product's unit price at order creation so later product-price changes do not alter the order's historical price.
+- Calculate order totals from line quantities and captured unit prices.
+- Persist orders and order items with relational constraints and decimal precision.
+- Confirm pending orders through a transaction that checks available stock, deducts quantities, records stock-out movements, and changes the order status to `Confirmed`.
+- Reject confirmation of already-confirmed or cancelled orders, nonexistent orders, and orders with insufficient stock.
+- Preserve the order's `Pending` status and inventory balances when confirmation fails.
 
-This prevents concurrent inventory operations using these service methods from independently modifying the same product based on stale quantities.
+**Order statuses:** `0` = `Pending`, `1` = `Confirmed`, `2` = `Cancelled`.
 
-If validation fails, the uncommitted transaction is rolled back when disposed.
+**Important:** Creating an order **does not** reserve or deduct stock. Inventory is deducted only when an order is successfully confirmed.
 
-**Concurrency test performed:**
+## Transaction and Concurrency Safety
 
-A test product was initialized with five units. Two independent PowerShell jobs attempted to remove four units each.
+StockFlow uses explicit EF Core transactions and PostgreSQL row-level locks for inventory consistency.
 
-Observed results:
+**Stock-In and Stock-Out:**
 
-- One Stock-Out request succeeded with HTTP `200 OK`.
-- The other request was rejected with HTTP `409 Conflict`.
-- Only one Stock-Out movement was recorded.
-- The product's final stock quantity was one unit.
+1. Begin a transaction.
+2. Lock the product row using `SELECT ... FOR UPDATE`.
+3. Validate the requested movement.
+4. Update the quantity and insert an inventory movement.
+5. Save changes and commit.
 
-This manual integration test passed. Automated tests that deliberately create concurrent database contention are planned.
+**Order confirmation:**
 
-### Database and Data Integrity
+1. Begin a transaction and lock the order row.
+2. Ensure the order is still `Pending`.
+3. Load order items, then lock distinct product rows in ascending product ID order.
+4. Aggregate quantities per product and verify that all required stock is available.
+5. Deduct stock and create one `StockOut` movement per distinct product.
+6. Mark the order `Confirmed`, save changes, and commit.
 
-- PostgreSQL persistence using Entity Framework Core
-- Code-first database migrations
-- Unique database index on product SKU
-- Maximum product name length of 100 characters
-- Maximum SKU length of 50 characters
-- Database CHECK constraint preventing negative product prices
-- Database CHECK constraint enforcing product stock between 0 and 100,000 units
-- Database CHECK constraint requiring positive inventory movement quantities
-- Foreign key relationship between inventory movements and products
-- Restrictive delete behavior to preserve inventory movement history
-- Database-level handling of unique SKU violations
-- Explicit transactions and PostgreSQL row-level locking for inventory operations
+If validation or saving fails before commit, the transaction is not committed and is rolled back on disposal. Locking the order prevents duplicate confirmation; locking product rows prevents competing confirmations and inventory operations from relying on stale stock balances.
 
-### Application Architecture
+### Manual Concurrency Tests Performed
 
-- Controller-based REST API
-- Service layer for business logic and data access
-- Dependency injection
-- Data Transfer Objects (DTOs) for request validation and inventory responses
-- Asynchronous database operations
-- LINQ queries for filtering, sorting, and DTO projection
-- Reusable generic pagination response using `PagedResult<T>`
-- Centralized database configuration through `StockFlowDbContext`
-- Custom exceptions for duplicate SKUs, insufficient stock, and exceeded stock limits
-- EF Core change tracking for updating existing entities
-- Explicit transaction management using EF Core
+| Scenario | Observed result |
+|---|---|
+| Two concurrent stock-out requests, each requesting 4 units from 5 available | One `200 OK`, one `409 Conflict`; final stock 1; one movement |
+| Confirm an order requesting 10 units when only 9 are available | `409 Conflict`; order remains pending; stock remains 9; no confirmation movements |
+| Two concurrent requests confirming the same order | One `200 OK`, one `409 Conflict`; stock deducted once; one movement |
+| Two different orders each requesting 5 units when 7 are available | One `200 OK`, one `409 Conflict`; confirmed/pending statuses; final stock 2; one movement of 5 units |
+
+These are **manual integration tests**. Automated integration and concurrency tests are planned.
+
+## Database and Data Integrity
+
+- PostgreSQL persistence through Entity Framework Core and code-first migrations.
+- Unique indexes for product SKU and customer email.
+- Relationships between customers, orders, order items, products, and inventory movements.
+- Product, order-total, and order-item unit-price columns use `numeric(18,2)` precision.
+- Database CHECK constraints enforce non-negative prices and totals, positive order-item and movement quantities, and product stock between 0 and 100,000.
+- Restrictive foreign-key delete behavior protects referenced customer/product records; order items cascade with their parent order.
+- Database constraints complement service-layer validation, including for writes outside the API.
+
+## Application Architecture
+
+- ASP.NET Core controller-based REST API.
+- Service layer for business logic and EF Core operations.
+- Dependency injection.
+- Request and response DTOs to separate HTTP contracts from database entities.
+- Asynchronous operations, LINQ filtering/projection, and EF Core change tracking.
+- Reusable `PagedResult<T>` for product pagination.
+- Custom exceptions for business-rule failures, mapped to HTTP responses by controllers.
+- Explicit database transactions and PostgreSQL row locks for stock-changing operations.
 
 ## Tech Stack
 
 | Technology | Purpose |
 |---|---|
-| C# | Programming language |
-| .NET 10 | Application framework |
-| ASP.NET Core Web API | REST API development |
-| Entity Framework Core | ORM, database migrations, and transactions |
-| PostgreSQL | Relational database and concurrency control |
-| Npgsql | PostgreSQL provider for EF Core |
-| Git and GitHub | Version control |
-| PowerShell | Manual API and concurrency testing |
+| C# / .NET 10 | Backend language and runtime |
+| ASP.NET Core Web API | HTTP endpoints and controllers |
+| Entity Framework Core | ORM, migrations, transactions |
+| PostgreSQL | Relational database, constraints, concurrency control |
+| Npgsql | EF Core PostgreSQL provider |
+| Git / GitHub | Version control |
+| PowerShell / psql | Manual API and database testing |
+| React + TypeScript | **Planned** frontend |
+| Docker / CI/CD | **Planned** packaging and deployment |
 
 ## API Endpoints
 
@@ -124,25 +125,13 @@ This manual integration test passed. Automated tests that deliberately create co
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/products` | Retrieve products with optional filtering and pagination |
-| GET | `/api/products/{id}` | Retrieve a product by ID |
-| POST | `/api/products` | Create a product with zero initial stock |
-| PUT | `/api/products/{id}` | Update product name, SKU, and price |
-| DELETE | `/api/products/{id}` | Delete a product |
+| GET | `/api/products` | List products with filtering and pagination |
+| GET | `/api/products/{id}` | Get product by ID |
+| POST | `/api/products` | Create product with zero initial stock |
+| PUT | `/api/products/{id}` | Update name, SKU, and price |
+| DELETE | `/api/products/{id}` | Delete product, subject to database relationships |
 
-Product creation and update requests do not accept `quantityInStock` as a writable DTO property. Stock quantities are managed through the inventory endpoints.
-
-### Inventory
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/inventory/stock-in` | Increase product stock and record a movement |
-| POST | `/api/inventory/stock-out` | Decrease product stock and record a movement |
-| GET | `/api/inventory/products/{productId}/history` | Retrieve movement history for a product |
-
-### Search, Filtering, and Pagination
-
-The GET products endpoint supports these optional query parameters:
+**Product query parameters**
 
 | Parameter | Description | Default |
 |---|---|---|
@@ -150,9 +139,7 @@ The GET products endpoint supports these optional query parameters:
 | `minPrice` | Minimum product price | None |
 | `maxPrice` | Maximum product price | None |
 | `page` | Page number | 1 |
-| `pageSize` | Number of products per page (maximum 100) | 10 |
-
-Example requests:
+| `pageSize` | Items per page (maximum 100) | 10 |
 
 ```http
 GET /api/products?search=keyboard
@@ -161,7 +148,7 @@ GET /api/products?page=1&pageSize=10
 GET /api/products?search=keyboard&minPrice=1000&maxPrice=2000&page=1&pageSize=5
 ```
 
-### Example Paginated Response
+Example paginated response (illustrative data):
 
 ```json
 {
@@ -170,8 +157,8 @@ GET /api/products?search=keyboard&minPrice=1000&maxPrice=2000&page=1&pageSize=5
       "id": 3,
       "name": "Logitech Keyboard MX",
       "sku": "KEY-LOG-MX",
-      "price": 1750,
-      "quantityInStock": 18
+      "price": 1750.00,
+      "quantityInStock": 17
     }
   ],
   "page": 1,
@@ -181,43 +168,27 @@ GET /api/products?search=keyboard&minPrice=1000&maxPrice=2000&page=1&pageSize=5
 }
 ```
 
-### Create Product
-
-**POST** `/api/products`
-
-New products are created with zero stock. Inventory is subsequently received using Stock-In.
-
-Example request:
+**Create product** — `POST /api/products`
 
 ```json
 {
   "name": "USB-C Hub",
   "sku": "HUB-USB-C-001",
-  "price": 450
+  "price": 450.00
 }
 ```
 
-Example response:
+A successful creation returns `201 Created` and the created product, including `quantityInStock: 0`. Stock is subsequently received through Stock-In.
 
-```json
-{
-  "id": 12,
-  "name": "USB-C Hub",
-  "sku": "HUB-USB-C-001",
-  "price": 450,
-  "quantityInStock": 0
-}
-```
+### Inventory
 
-**Success:** `201 Created`
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/inventory/stock-in` | Increase stock and record a movement |
+| POST | `/api/inventory/stock-out` | Decrease stock and record a movement |
+| GET | `/api/inventory/products/{productId}/history` | Get a product's movement history |
 
-### Stock-In
-
-**POST** `/api/inventory/stock-in`
-
-Increases the available quantity of a product and records the stock movement.
-
-Example request:
+**Stock-In** — `POST /api/inventory/stock-in`
 
 ```json
 {
@@ -227,144 +198,124 @@ Example request:
 }
 ```
 
-Example response:
+**Stock-Out** — `POST /api/inventory/stock-out`
 
 ```json
 {
-  "id": 3,
   "productId": 12,
-  "type": 0,
-  "quantity": 10,
-  "reason": "Initial stock received",
-  "createdAt": "2026-10-15T21:00:02.568857Z"
-}
-```
-
-The resulting stock must not exceed 100,000 units.
-
-**Success:** `200 OK`
-
-**Stock limit exceeded:** `409 Conflict`
-
-### Stock-Out
-
-**POST** `/api/inventory/stock-out`
-
-Decreases the available quantity of a product and records the stock movement. Requests exceeding available stock are rejected.
-
-Example request:
-
-```json
-{
-  "productId": 13,
   "quantity": 4,
-  "reason": "Concurrent stock-out test"
+  "reason": "Warehouse dispatch"
 }
 ```
 
-Example response:
+Successful movements return `200 OK` and a movement response similar to:
 
 ```json
 {
   "id": 7,
-  "productId": 13,
+  "productId": 12,
   "type": 1,
   "quantity": 4,
-  "reason": "Concurrent stock-out test",
+  "reason": "Warehouse dispatch",
   "createdAt": "2026-10-16T15:40:45.44423Z"
 }
 ```
 
-**Success:** `200 OK`
+Movement types: `0` = `StockIn`, `1` = `StockOut`. Insufficient stock or exceeding the stock limit returns `409 Conflict`.
 
-**Insufficient stock:** `409 Conflict`
+**Inventory history** — `GET /api/inventory/products/12/history`
 
-### Inventory Movement History
+Returns an array of movements, most recent first. Existing products without movements return `200 OK` with `[]`; nonexistent products return `404 Not Found`.
 
-**GET** `/api/inventory/products/{productId}/history`
+### Customers
 
-Retrieves inventory movements for a specific product, ordered by the most recent movement first.
+The customer module supports customer creation, retrieval, and updates. The exact customer endpoint routes and payload examples can be added after checking the current `CustomersController` so the documentation matches the implementation precisely.
 
-Example request:
+### Orders
 
-```http
-GET /api/inventory/products/13/history
-```
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/orders` | Create a pending order |
+| POST | `/api/orders/{id}/confirm` | Confirm a pending order and deduct inventory atomically |
 
-Example response:
+**Create order** — `POST /api/orders`
 
 ```json
-[
-  {
-    "id": 7,
-    "productId": 13,
-    "type": 1,
-    "quantity": 4,
-    "reason": "Concurrent stock-out test",
-    "createdAt": "2026-10-16T15:40:45.44423Z"
-  },
-  {
-    "id": 6,
-    "productId": 13,
-    "type": 0,
-    "quantity": 5,
-    "reason": "Initial concurrency test stock",
-    "createdAt": "2026-10-16T15:37:56.869308Z"
-  }
-]
+{
+  "customerId": 1,
+  "items": [
+    { "productId": 3, "quantity": 1 },
+    { "productId": 6, "quantity": 1 }
+  ]
+}
 ```
 
-**Response behavior:**
+Success: `201 Created`. The response includes order ID, customer ID, date, status, total amount, and order items with captured unit prices and calculated line totals.
 
-- `200 OK` — Product exists and movement history is returned
-- `200 OK` with `[]` — Product exists but has no recorded movements
-- `404 Not Found` — Product does not exist
+Example response (illustrative order ID):
 
-**Movement types:**
+```json
+{
+  "id": 4,
+  "customerId": 1,
+  "orderDate": "2026-10-22T22:47:39.995729Z",
+  "status": 0,
+  "totalAmount": 2549.99,
+  "items": [
+    {
+      "id": 7,
+      "productId": 3,
+      "quantity": 1,
+      "unitPrice": 1750.00,
+      "lineTotal": 1750.00
+    },
+    {
+      "id": 8,
+      "productId": 6,
+      "quantity": 1,
+      "unitPrice": 799.99,
+      "lineTotal": 799.99
+    }
+  ]
+}
+```
 
-- `0` — StockIn
-- `1` — StockOut
+Invalid order input returns `400 Bad Request`; a nonexistent customer or referenced product returns `404 Not Found`.
+
+**Confirm order** — `POST /api/orders/{id}/confirm`
+
+```http
+POST /api/orders/4/confirm
+```
+
+Success: `200 OK`, with the updated order response and `status: 1` (`Confirmed`). Stock deductions and inventory movement records are committed together.
+
+| Situation | Response |
+|---|---|
+| Order confirmed | `200 OK` |
+| Order does not exist | `404 Not Found` |
+| Referenced product does not exist | `404 Not Found` |
+| Order is already confirmed or cancelled | `409 Conflict` |
+| Insufficient stock | `409 Conflict` |
+
+**Not yet implemented:** `GET /api/orders`, `GET /api/orders/{id}`, and order cancellation are planned for the next milestone.
 
 ## Validation and Error Handling
 
-StockFlow validates incoming requests and applies business rules before committing database changes.
-
-| HTTP Status | Meaning |
+| HTTP Status | Typical meaning |
 |---|---|
-| `200 OK` | Successful retrieval, deletion, or inventory movement |
-| `201 Created` | Product created successfully |
-| `204 No Content` | Product updated successfully |
-| `400 Bad Request` | Invalid request data or query parameters |
-| `404 Not Found` | Requested product does not exist |
-| `409 Conflict` | Duplicate SKU, insufficient stock, or stock limit exceeded |
+| `200 OK` | Successful retrieval, stock movement, order confirmation, or other successful operation |
+| `201 Created` | Product, customer, or order created |
+| `204 No Content` | Successful update where no response body is returned |
+| `400 Bad Request` | Invalid request, invalid quantities/prices, or invalid query parameters |
+| `404 Not Found` | Requested product, customer, or order not found |
+| `409 Conflict` | Duplicate SKU/email, stock-limit or insufficient-stock violation, or invalid order status for confirmation |
 
-### Product Validation
-
-- Required product name and SKU
-- Maximum name and SKU lengths
-- Non-negative price
-- Unique product SKUs
-- Valid price filtering ranges
-- Valid pagination parameters
-- Initial stock quantity set to zero
-- No direct stock quantity changes through product update requests
-
-### Inventory Validation
-
-- Positive product ID
-- Positive movement quantity
-- Required movement reason with a maximum length of 200 characters
-- Product existence verification
-- Insufficient-stock validation before deduction
-- Maximum stock limit of 100,000 units
-- Safe capacity calculation before increasing stock
-- Database constraints preventing invalid stock quantities
-- Database constraints preventing zero or negative movement quantities
-- Row-level locking during stock changes
-
-Database constraints provide an additional layer of protection, including when data is modified outside the API.
+Validation occurs at the request/service layers and is reinforced by database constraints. For example, product stock cannot be modified through product update DTOs; it must be changed using inventory operations or a successful order confirmation.
 
 ## Project Structure
+
+The following is a **representative structure**, highlighting the principal modules rather than every file:
 
 ```text
 StockFlow/
@@ -374,27 +325,35 @@ StockFlow/
     │   └── PagedResult.cs
     ├── Controllers/
     │   ├── ProductsController.cs
-    │   └── InventoryController.cs
+    │   ├── InventoryController.cs
+    │   ├── CustomersController.cs
+    │   └── OrdersController.cs
     ├── Data/
     │   └── StockFlowDbContext.cs
     ├── DTOs/
-    │   ├── CreateProductDto.cs
-    │   ├── UpdateProductDto.cs
-    │   ├── ProductQueryDto.cs
-    │   ├── StockMovementDto.cs
-    │   └── InventoryMovementResponseDto.cs
+    │   ├── ... product DTOs
+    │   ├── ... inventory DTOs
+    │   ├── ... customer DTOs
+    │   ├── CreateOrderDto.cs
+    │   ├── CreateOrderItemDto.cs
+    │   ├── OrderResponseDto.cs
+    │   └── OrderItemResponseDto.cs
     ├── Exceptions/
-    │   ├── DuplicateSkuException.cs
-    │   ├── InsufficientStockException.cs
-    │   └── StockLimitExceededException.cs
+    │   └── ... business exceptions
     ├── Migrations/
     ├── Models/
     │   ├── Product.cs
     │   ├── InventoryMovement.cs
-    │   └── MovementType.cs
+    │   ├── MovementType.cs
+    │   ├── Customer.cs
+    │   ├── Order.cs
+    │   ├── OrderItem.cs
+    │   └── OrderStatus.cs
     ├── Services/
     │   ├── ProductService.cs
-    │   └── InventoryService.cs
+    │   ├── InventoryService.cs
+    │   ├── CustomerService.cs
+    │   └── OrderService.cs
     ├── Program.cs
     └── appsettings.json
 ```
@@ -405,24 +364,22 @@ StockFlow/
 
 - .NET 10 SDK
 - PostgreSQL
-- EF Core CLI tools (`dotnet-ef`)
+- EF Core CLI (`dotnet-ef`)
 
-### 1. Clone the Repository
+### 1. Clone the repository
 
 ```bash
 git clone <repository-url>
 cd StockFlow
 ```
 
-Replace `<repository-url>` with the GitHub repository URL.
+Replace `<repository-url>` with the repository's actual GitHub URL.
 
 ### 2. Configure PostgreSQL
 
-Create a PostgreSQL database named `stockflow`.
+Create a database named `stockflow`. Configure `ConnectionStrings:DefaultConnection` through local development configuration or .NET user secrets, and confirm that the key matches the one used by `Program.cs`.
 
-Configure the `ConnectionStrings:DefaultConnection` setting through local development configuration or .NET user secrets. Confirm that the connection-string key matches the one used in `Program.cs`.
-
-Example configuration:
+Example configuration (**do not commit real credentials**):
 
 ```json
 {
@@ -432,9 +389,7 @@ Example configuration:
 }
 ```
 
-Do not commit real database credentials to Git.
-
-### 3. Apply Database Migrations
+### 3. Apply migrations
 
 From the solution root:
 
@@ -448,80 +403,64 @@ dotnet ef database update --project StockFlow.Api --startup-project StockFlow.Ap
 dotnet run --project StockFlow.Api
 ```
 
-Use the local URL displayed in the terminal.
+Use the local URL displayed in the terminal (for example, `http://localhost:5230`).
 
 ## Development Roadmap
 
-### Product Management
+### Backend Foundation and Products
 
-- [x] Product CRUD endpoints
-- [x] Controller and service architecture
-- [x] PostgreSQL integration with EF Core
-- [x] Database migrations
-- [x] Request DTO validation
-- [x] Unique SKU enforcement
-- [x] Database integrity constraints
-- [x] Product search and price filtering
-- [x] Pagination and response metadata
-- [x] Restrict direct stock quantity changes through Product CRUD
+- [x] ASP.NET Core controller/service architecture and dependency injection
+- [x] PostgreSQL integration and EF Core migrations
+- [x] Product CRUD, DTOs, validation, and unique SKU enforcement
+- [x] Product search, price filtering, and pagination
+- [x] Database constraints and price precision
+- [x] Restrict direct stock changes through product CRUD
 
 ### Inventory Management
 
-- [x] InventoryMovement entity and MovementType enum
-- [x] Product-to-inventory movement relationship
-- [x] Inventory database migration
-- [x] Stock-In endpoint
-- [x] Stock-Out endpoint
-- [x] Insufficient-stock validation
-- [x] Inventory movement persistence
-- [x] Inventory request and response DTOs
-- [x] Inventory movement history endpoint
-- [x] Maximum stock limit and overflow-safe capacity validation
-- [x] Database CHECK constraint enforcing stock limits
-- [x] Explicit database transactions
-- [x] PostgreSQL row-level locking for Stock-In and Stock-Out
-- [x] Manual concurrent Stock-Out integration test
-- [ ] Automated inventory concurrency and integration tests
+- [x] Inventory movement model and history
+- [x] Stock-In and Stock-Out endpoints
+- [x] Stock limits and insufficient-stock validation
+- [x] Explicit transactions and PostgreSQL row-level locking
+- [x] Manual concurrent Stock-Out test
+- [ ] Automated inventory integration/concurrency tests
 
-### Order and Business Management
+### Customers and Orders
 
-- [ ] Supplier management
-- [ ] Customer management
-- [ ] Order creation and processing
-- [ ] Order items and total calculations
-- [ ] Transactional order processing and inventory deduction
+- [x] Customer management and unique email enforcement
+- [x] Order and order-item schema, relationships, and migrations
+- [x] Pending order creation, item-price capture, and total calculation
+- [x] Transactional order confirmation and inventory deductions
+- [x] Order confirmation movements and duplicate-confirmation protection
+- [x] Manual insufficient-stock, rollback, and concurrency tests
+- [ ] Retrieve individual orders
+- [ ] List/filter/paginate orders
+- [ ] Order cancellation and inventory-restoration policy
 
-### Security and Testing
+### Security and Quality
 
-- [ ] Authentication and authorization
+- [ ] Automated unit and integration tests (including concurrency scenarios)
+- [ ] Authentication and JWT authorization
 - [ ] Role-based access control
-- [ ] Automated unit tests
-- [ ] Integration tests
-- [ ] API hardening and error handling improvements
+- [ ] Additional API hardening and documentation
 
-### Frontend and Deployment
+### React + TypeScript Frontend
 
-- [ ] React and TypeScript frontend
+- [ ] React + TypeScript application setup
 - [ ] Product management interface
-- [ ] Inventory management interface
-- [ ] Order management interface
-- [ ] Dashboard
+- [ ] Inventory management and movement history
+- [ ] Customer and order management interfaces
+- [ ] Dashboard with inventory and order summaries
+
+### Deployment and Portfolio
+
 - [ ] Docker containerization
-- [ ] CI/CD pipeline and deployment
-- [ ] Final API documentation and portfolio screenshots
+- [ ] CI/CD pipeline
+- [ ] Cloud deployment
+- [ ] Final README refinements, API documentation, and portfolio screenshots
 
-## Project Status
+**Possible future extension:** Supplier management (not part of the currently completed modules).
 
-StockFlow is under active development.
+## Current Development Priority
 
-The **Product Management module** is implemented, including CRUD operations, PostgreSQL persistence, request validation, database constraints, search, filtering, and pagination. Product creation initializes stock to zero, and product updates cannot directly change inventory quantities.
-
-The **Inventory Management module** supports Stock-In, Stock-Out, and product-specific inventory movement history. Inventory operations enforce available stock and maximum stock limits, use explicit PostgreSQL transactions, and acquire row-level locks to coordinate concurrent modifications.
-
-The database independently enforces stock quantity limits through CHECK constraints.
-
-A manual concurrent Stock-Out test confirmed that two requests attempting to remove four units from a product containing five units resulted in one successful operation, one HTTP `409 Conflict`, and a final balance of one unit.
-
-**The next development priority is Order Management**, including customers, order items, order totals, and transactional inventory deduction.
-
-Subsequent phases will introduce supplier management, authentication and authorization, automated testing, a React and TypeScript frontend, Docker, CI/CD, and deployment.
+**Next milestone: Order retrieval and cancellation.** After completing the remaining order workflows, the focus will shift to automated testing, authentication, the React + TypeScript frontend, and deployment.
