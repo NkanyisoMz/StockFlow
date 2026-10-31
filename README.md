@@ -4,7 +4,11 @@
 
 StockFlow manages products, inventory, customers, and orders. It demonstrates RESTful API design, controller/service separation, dependency injection, relational data modelling, input validation, business rules, database integrity, transactions, and concurrency control.
 
-**Project status:** Active development — product management, inventory management, customer management, order creation, and transactional order confirmation are implemented. Order retrieval, cancellation, automated tests, authentication, frontend development, and deployment are upcoming.
+
+**Project status:** Active development — product management, inventory management, customer management, and the core order lifecycle are implemented. Orders support creation, retrieval, filtering, pagination, transactional confirmation, and cancellation. Manual concurrency testing has verified stock consistency and protection against conflicting order operations.
+
+**Next milestone:** Automated testing with xUnit, followed by authentication, frontend development, and deployment.
+
 
 ## Features
 
@@ -45,6 +49,15 @@ StockFlow manages products, inventory, customers, and orders. It demonstrates RE
 - Confirm pending orders through a transaction that checks available stock, deducts quantities, records stock-out movements, and changes the order status to `Confirmed`.
 - Reject confirmation of already-confirmed or cancelled orders, nonexistent orders, and orders with insufficient stock.
 - Preserve the order's `Pending` status and inventory balances when confirmation fails.
+- Retrieve individual orders by ID, including their order items.
+- List orders with pagination, returning page number, page size, total count, and total pages.
+- Filter orders by customer ID (`customerId`) and status (`status`), including combined filters.
+- Sort orders by creation date (newest first), using order ID as a secondary sort key.
+- Validate pagination parameters, with a maximum page size of 100.
+- Cancel pending orders without modifying inventory quantities or creating inventory movements.
+- Reject cancellation of confirmed or already-cancelled orders with `409 Conflict`.
+- Use transactions and PostgreSQL row-level locking to coordinate concurrent confirmation and cancellation requests.
+
 
 **Order statuses:** `0` = `Pending`, `1` = `Confirmed`, `2` = `Cancelled`.
 
@@ -73,6 +86,22 @@ StockFlow uses explicit EF Core transactions and PostgreSQL row-level locks for 
 
 If validation or saving fails before commit, the transaction is not committed and is rolled back on disposal. Locking the order prevents duplicate confirmation; locking product rows prevents competing confirmations and inventory operations from relying on stale stock balances.
 
+
+**Order cancellation:**
+
+1. Begin a database transaction.
+2. Lock the order row using PostgreSQL `SELECT ... FOR UPDATE`.
+3. Verify that the order exists and has `Pending` status.
+4. Change the order status to `Cancelled`.
+5. Save changes and commit the transaction.
+
+Cancellation does not restore or deduct inventory because pending orders have not reserved or consumed stock.
+
+Both confirmation and cancellation lock the same order row before checking its status. This prevents conflicting operations from independently transitioning the same pending order.
+
+Order locks protect order status transitions, while product locks protect inventory quantities.
+
+
 ### Manual Concurrency Tests Performed
 
 | Scenario | Observed result |
@@ -81,8 +110,13 @@ If validation or saving fails before commit, the transaction is not committed an
 | Confirm an order requesting 10 units when only 9 are available | `409 Conflict`; order remains pending; stock remains 9; no confirmation movements |
 | Two concurrent requests confirming the same order | One `200 OK`, one `409 Conflict`; stock deducted once; one movement |
 | Two different orders each requesting 5 units when 7 are available | One `200 OK`, one `409 Conflict`; confirmed/pending statuses; final stock 2; one movement of 5 units |
+| Concurrent confirmation and cancellation of the same pending order | Confirmation returned `200 OK`; cancellation returned `409 Conflict`; order #12 became `Confirmed`; product stock decreased from 2 to 1; exactly one StockOut movement was recorded |
 
-These are **manual integration tests**. Automated integration and concurrency tests are planned.
+
+**Order cancellation verification:** Cancelling pending order #11 returned `200 OK` and changed its status to `Cancelled`. Repeated cancellation and cancellation of confirmed order #10 returned `409 Conflict`. Cancelling a nonexistent order returned `404 Not Found`. Inventory remained unchanged, and no cancellation inventory movement was created.
+
+These tests were performed manually using PowerShell HTTP requests and PostgreSQL queries. Automated regression and concurrency tests are planned.
+
 
 ## Database and Data Integrity
 
@@ -101,7 +135,9 @@ These are **manual integration tests**. Automated integration and concurrency te
 - Dependency injection.
 - Request and response DTOs to separate HTTP contracts from database entities.
 - Asynchronous operations, LINQ filtering/projection, and EF Core change tracking.
-- Reusable `PagedResult<T>` for product pagination.
+- Reusable `PagedResult<T>` for product and order pagination.
+- Query DTOs for filtering, pagination, and request validation.
+- Order response DTO mapping shared across creation, retrieval, confirmation, and cancellation.
 - Custom exceptions for business-rule failures, mapped to HTTP responses by controllers.
 - Explicit database transactions and PostgreSQL row locks for stock-changing operations.
 
@@ -233,10 +269,15 @@ The customer module supports customer creation, retrieval, and updates. The exac
 
 ### Orders
 
+
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/orders` | Create a pending order |
+| GET | `/api/orders` | List orders with filtering and pagination |
+| GET | `/api/orders/{id}` | Retrieve an order with its items |
 | POST | `/api/orders/{id}/confirm` | Confirm a pending order and deduct inventory atomically |
+| POST | `/api/orders/{id}/cancel` | Cancel a pending order without changing inventory |
+
 
 **Create order** — `POST /api/orders`
 
@@ -298,18 +339,103 @@ Success: `200 OK`, with the updated order response and `status: 1` (`Confirmed`)
 | Order is already confirmed or cancelled | `409 Conflict` |
 | Insufficient stock | `409 Conflict` |
 
-**Not yet implemented:** `GET /api/orders`, `GET /api/orders/{id}`, and order cancellation are planned for the next milestone.
+
+**Get order by ID** — `GET /api/orders/{id}`
+
+```http
+GET /api/orders/4
+```
+
+Returns `200 OK` with the order's ID, customer ID, date, status, total amount, and order items.
+
+Returns `404 Not Found` if the order does not exist.
+
+**List orders** — `GET /api/orders`
+
+Supports pagination and optional filtering by customer and order status.
+
+| Parameter | Description | Default |
+|---|---|---|
+| `customerId` | Filter by customer ID | None |
+| `status` | Filter by order status (`0`, `1`, `2`) | None |
+| `page` | Page number (minimum 1) | 1 |
+| `pageSize` | Items per page (1–100) | 10 |
+
+Examples:
+
+```http
+GET /api/orders
+GET /api/orders?page=1&pageSize=5
+GET /api/orders?customerId=1
+GET /api/orders?status=1
+GET /api/orders?customerId=1&status=1&page=1&pageSize=10
+```
+
+Orders are returned newest first, with order ID used as a secondary sorting key.
+
+Example paginated response (illustrative data):
+
+```json
+{
+  "items": [
+    {
+      "id": 12,
+      "customerId": 1,
+      "orderDate": "2026-10-31T12:00:00Z",
+      "status": 1,
+      "totalAmount": 799.99,
+      "items": [
+        {
+          "id": 19,
+          "productId": 6,
+          "quantity": 1,
+          "unitPrice": 799.99,
+          "lineTotal": 799.99
+        }
+      ]
+    }
+  ],
+  "page": 1,
+  "pageSize": 10,
+  "totalCount": 1,
+  "totalPages": 1
+}
+```
+
+Invalid pagination parameters return `400 Bad Request`.
+
+**Cancel order** — `POST /api/orders/{id}/cancel`
+
+```http
+POST /api/orders/11/cancel
+```
+
+Cancels an order only if its current status is `Pending`.
+
+Successful cancellation returns `200 OK` with the updated order response and `status: 2` (`Cancelled`).
+
+| Situation | Response |
+|---|---|
+| Pending order cancelled | `200 OK` |
+| Order does not exist | `404 Not Found` |
+| Order is already confirmed | `409 Conflict` |
+| Order is already cancelled | `409 Conflict` |
+
+Cancellation does not modify product stock or create inventory movements.
+
+Confirmation and cancellation use row-level locking to prevent conflicting state transitions when requests execute concurrently.
+
 
 ## Validation and Error Handling
 
 | HTTP Status | Typical meaning |
 |---|---|
-| `200 OK` | Successful retrieval, stock movement, order confirmation, or other successful operation |
+| `200 OK` | Successful retrieval, stock movement, order confirmation, order cancellation, or other successful operation |
 | `201 Created` | Product, customer, or order created |
 | `204 No Content` | Successful update where no response body is returned |
 | `400 Bad Request` | Invalid request, invalid quantities/prices, or invalid query parameters |
 | `404 Not Found` | Requested product, customer, or order not found |
-| `409 Conflict` | Duplicate SKU/email, stock-limit or insufficient-stock violation, or invalid order status for confirmation |
+| `409 Conflict` | Duplicate SKU/email, stock-limit or insufficient-stock violation, duplicate confirmation, or cancellation of a non-pending order |
 
 Validation occurs at the request/service layers and is reinforced by database constraints. For example, product stock cannot be modified through product update DTOs; it must be changed using inventory operations or a successful order confirmation.
 
@@ -433,9 +559,15 @@ Use the local URL displayed in the terminal (for example, `http://localhost:5230
 - [x] Transactional order confirmation and inventory deductions
 - [x] Order confirmation movements and duplicate-confirmation protection
 - [x] Manual insufficient-stock, rollback, and concurrency tests
-- [ ] Retrieve individual orders
-- [ ] List/filter/paginate orders
-- [ ] Order cancellation and inventory-restoration policy
+- [x] Retrieve individual orders with their order items
+- [x] List orders with pagination and total-count metadata
+- [x] Filter orders by customer ID and status
+- [x] Combine order filters and validate pagination parameters
+- [x] Cancel pending orders without modifying inventory
+- [x] Reject cancellation of confirmed and already-cancelled orders
+- [x] Manual cancellation tests and database consistency verification
+- [x] Manual concurrent confirmation-versus-cancellation test
+
 
 ### Security and Quality
 
@@ -461,6 +593,21 @@ Use the local URL displayed in the terminal (for example, `http://localhost:5230
 
 **Possible future extension:** Supplier management (not part of the currently completed modules).
 
+
 ## Current Development Priority
 
-**Next milestone: Order retrieval and cancellation.** After completing the remaining order workflows, the focus will shift to automated testing, authentication, the React + TypeScript frontend, and deployment.
+**Milestone 5 — Order Management: Complete**
+
+The core order lifecycle is implemented and manually verified, including creation, retrieval, filtering, pagination, transactional confirmation, cancellation, and concurrency protection.
+
+**Next milestone: Milestone 6 — Automated Testing with xUnit**
+
+Planned testing priorities:
+
+1. Unit tests for business rules and validation.
+2. Integration tests for critical API endpoints.
+3. Transaction rollback tests for failed order confirmations.
+4. PostgreSQL-backed concurrency tests for inventory operations and conflicting order state transitions.
+
+Following automated testing, development will continue with authentication and role-based authorization, the React + TypeScript frontend, Docker, CI/CD, and cloud deployment.
+
