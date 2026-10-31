@@ -13,6 +13,53 @@ public class OrderService
         _db = db;
     }
 
+    public async Task<Order?> GetByIdAsync(int orderId)
+    {
+
+        return await _db.Orders
+            .Include(order => order.OrderItems)
+            .AsNoTracking()
+            .SingleOrDefaultAsync(order => order.Id == orderId);
+    }
+
+    public async Task<PagedResult<Order>> GetAllAsync(OrderQueryDto filters)
+    {
+        IQueryable<Order> query = _db.Orders
+            .Include(o => o.OrderItems)
+            .AsNoTracking();
+
+        if (filters.CustomerId.HasValue)
+        {
+            query = query.Where(o => o.CustomerId == filters.CustomerId.Value);
+        }
+
+        if (filters.Status.HasValue)
+        {
+            query = query.Where(o => o.Status == filters.Status.Value);
+        }
+
+        int totalCount = await query.CountAsync();
+
+        var items = await query
+            .OrderByDescending(o => o.OrderDate)
+            .ThenByDescending(o => o.Id)
+            .Skip((filters.Page - 1) * filters.PageSize)
+            .Take(filters.PageSize)
+            .ToListAsync();
+
+        int totalPages = (int)Math.Ceiling((double)totalCount / filters.PageSize);
+
+        return new PagedResult<Order>
+        {
+            Items = items,
+            Page = filters.Page,
+            PageSize = filters.PageSize,
+            TotalCount = totalCount,
+            TotalPages = totalPages
+        };
+    }
+
+
     public async Task<Order> CreateAsync(CreateOrderDto dto)
     {
 
@@ -230,4 +277,35 @@ public class OrderService
 
         return order;
     }
+
+    public async Task<Order> CancelOrderAsync(int orderId)
+    {
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+
+        var order = await _db.Orders
+            .FromSqlInterpolated($"SELECT * FROM \"Orders\" WHERE \"Id\" = {orderId} FOR UPDATE")
+            .SingleOrDefaultAsync();
+
+        if (order is null)
+        {
+            throw new OrderNotFoundException($"Order with ID {orderId} was not found.");
+        }
+
+        if (order.Status != OrderStatus.Pending)
+        {
+            throw new InvalidOrderException($"Order {orderId} cannot be cancelled because its status is {order.Status}.");
+        }
+
+        order.OrderItems = await _db.OrderItems
+            .Where(item => item.OrderId == orderId)
+            .ToListAsync();
+
+        order.Status = OrderStatus.Cancelled;
+
+        await _db.SaveChangesAsync();
+        await transaction.CommitAsync();
+
+        return order;
+    }
+
 }
