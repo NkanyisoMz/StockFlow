@@ -1,6 +1,61 @@
-@StockFlow.Api_HostAddress = http://localhost:5230
+@baseUrl = http://localhost:5230
 
-GET {{StockFlow.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+# Replace these IDs with values returned by the creation requests.
+@productId = 1
+@customerId = 1
+@orderId = 1
 
-###
+### 1. Create product
+POST {{baseUrl}}/api/products
+Content-Type: application/json
+
+{
+  "name": "USB-C Hub",
+  "sku": "HUB-001",
+  "price": 450.00
+}
+
+### 2. Receive stock
+POST {{baseUrl}}/api/inventory/stock-in
+Content-Type: application/json
+
+{
+  "productId": {{productId}},
+  "quantity": 10,
+  "reason": "Initial stock received"
+}
+
+### 3. Create customer
+POST {{baseUrl}}/api/customers
+Content-Type: application/json
+
+{
+  "name": "Test Customer",
+  "email": "test@example.com"
+}
+
+### 4. Create order
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+
+{
+  "customerId": {{customerId}},
+  "items": [
+    {
+      "productId": {{productId}},
+      "quantity": 2
+    }
+  ]
+}
+
+### 5. Confirm order
+POST {{baseUrl}}/api/orders/{{orderId}}/confirm
+
+### 6. Check stock
+GET {{baseUrl}}/api/products/{{productId}}
+
+### 7. Check movement history
+GET {{baseUrl}}/api/inventory/products/{{productId}}/history
+
+### 8. Check order
+GET {{baseUrl}}/api/orders/{{orderId}}
