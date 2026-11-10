@@ -557,6 +557,63 @@ dotnet run --project StockFlow.Api
 
 Use the local URL displayed in the terminal (for example, `http://localhost:5230`).
 
+## Testing
+
+Automated integration tests are planned using xUnit and an isolated
+PostgreSQL database. The following rules define the expected behavior
+for regression testing.
+
+### Business Rules
+
+- Products start with zero stock.
+- Product updates cannot change stock quantities.
+- Stock must remain between 0 and 100,000 units.
+- Order items capture product prices when the order is created.
+- Pending orders do not reserve or deduct stock.
+- Only pending orders can be confirmed or cancelled.
+- Confirmation commits stock deductions, inventory movements, and
+  order status changes together.
+- Failed confirmation leaves persisted stock, movements, and order
+  status unchanged.
+- Cancellation does not change stock or create inventory movements.
+- Concurrent operations must not deduct stock twice or allow
+  conflicting order state transitions.
+
+### Manual API Checks
+
+Use `StockFlow.Api/StockFlow.Api.http` to exercise the API.
+
+The main verification flow is:
+
+1. Create a product.
+2. Receive stock.
+3. Create a customer.
+4. Create an order.
+5. Confirm the order.
+6. Verify the product balance and inventory movement history.
+
+Separately, create and cancel a pending order, then verify that its
+status changes without affecting inventory.
+
+Replace example IDs with values returned by preceding requests.
+
+### Expected Edge-Case Behavior
+
+The following decisions will be implemented and verified during the
+automated testing milestone where they are not already supported:
+
+| Scenario | Expected result |
+|---|---|
+| Delete a product referenced by order items or inventory movements | 409 Conflict; existing data remains unchanged |
+| Filter orders using an undefined numeric status | 400 Bad Request |
+| Filter products using prices above 1,000,000 | Accepted within the supported product monetary range |
+| Request a valid page beyond available results | 200 OK with empty items and accurate pagination metadata |
+
+### Automated Testing Status
+
+The test project and PostgreSQL integration-test fixture have not yet
+been added. Test commands will be documented once the suite is available.
+
 ## Development Roadmap
 
 ### Backend Foundation and Products
