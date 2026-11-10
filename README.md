@@ -486,6 +486,32 @@ StockFlow/
 
 ## Getting Started
 
+### Restore and build
+
+From the repository root:
+
+```powershell
+dotnet restore
+dotnet build --no-restore
+```
+
+### Apply database migrations
+
+Configure `ConnectionStrings:DefaultConnection` for your local development
+database, then run:
+
+```powershell
+dotnet ef database update --project StockFlow.Api
+```
+
+### Run the API
+
+```powershell
+dotnet run --project StockFlow.Api
+```
+
+Use the application URL printed in the terminal for API requests.
+
 ### Prerequisites
 
 - .NET 10 SDK
