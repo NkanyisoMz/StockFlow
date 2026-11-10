@@ -599,15 +599,20 @@ Replace example IDs with values returned by preceding requests.
 
 ### Expected Edge-Case Behavior
 
-The following decisions will be implemented and verified during the
-automated testing milestone where they are not already supported:
+The following decisions define expected behavior for regression tests.
+They are pending automated verification; cases not currently supported
+will be implemented during the testing milestone.
 
-| Scenario | Expected result |
+| Scenario | Expected behavior |
 |---|---|
-| Delete a product referenced by order items or inventory movements | 409 Conflict; existing data remains unchanged |
-| Filter orders using an undefined numeric status | 400 Bad Request |
-| Filter products using prices above 1,000,000 | Accepted within the supported product monetary range |
-| Request a valid page beyond available results | 200 OK with empty items and accurate pagination metadata |
+| Delete a product referenced by order items or inventory movements | Return `409 Conflict`; preserve the product and all references. |
+| Filter orders using an undefined numeric status, such as `999` | Return `400 Bad Request`. |
+| Filter products using prices above 1,000,000 | Accept values within the supported product monetary range: 0 through 9,999,999,999,999,999.99. |
+| Request a valid page beyond the available results | Return `200 OK` with an empty `items` array and accurate pagination metadata. |
+
+Each case will receive an automated regression test. Any required fix
+must preserve existing business rules, database constraints, transaction
+boundaries, and concurrency guarantees.
 
 ### Automated Testing Status
 
