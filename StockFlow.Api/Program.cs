@@ -41,4 +41,5 @@ app.MapControllers();
 
 app.Run();
 
-
+// Allows integration tests to reference the application's entry point.
+public partial class Program { }
