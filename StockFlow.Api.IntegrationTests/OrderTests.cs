@@ -689,6 +689,137 @@ public async Task CreateOrder_WithInvalidItems_DoesNotPersistOrder(
         product.GetProperty("quantityInStock").GetInt32());
 }
 
+[Theory]
+[InlineData("customer")]
+[InlineData("product")]
+public async Task CreateOrder_WithMissingReference_ReturnsNotFound(
+    string missingReference)
+{
+    using var client = CreateClient();
+
+    const int missingId = int.MaxValue;
+
+    var productId = await TestData.CreateProductAsync(
+        client,
+        price: 100.00m,
+        initialStock: 10);
+
+    var customerId = await TestData.CreateCustomerAsync(client);
+
+    var missingResourcePath = missingReference == "customer"
+        ? $"/api/customers/{missingId}"
+        : $"/api/products/{missingId}";
+
+    // Verify the assumed missing ID before using it in the request.
+    using var lookupResponse = await client.GetAsync(
+        missingResourcePath);
+
+    Assert.Equal(
+        HttpStatusCode.NotFound,
+        lookupResponse.StatusCode);
+
+    var requestedCustomerId = missingReference == "customer"
+        ? missingId
+        : customerId;
+
+    var requestedProductId = missingReference == "product"
+        ? missingId
+        : productId;
+
+    using var createResponse = await client.PostAsJsonAsync(
+        "/api/orders",
+        new
+        {
+            customerId = requestedCustomerId,
+            items = new[]
+            {
+                new
+                {
+                    productId = requestedProductId,
+                    quantity = 2
+                }
+            }
+        });
+
+    Assert.Equal(
+        HttpStatusCode.NotFound,
+        createResponse.StatusCode);
+
+    // No order should be persisted for the requested customer ID.
+    using var ordersResponse = await client.GetAsync(
+        $"/api/orders?customerId={requestedCustomerId}");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        ordersResponse.StatusCode);
+
+    var orders = await ordersResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        0,
+        orders.GetProperty("totalCount").GetInt32());
+
+    Assert.Equal(
+        0,
+        orders.GetProperty("items").GetArrayLength());
+
+    // The existing product must remain unchanged.
+    using var productResponse = await client.GetAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        productResponse.StatusCode);
+
+    var product = await productResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        10,
+        product.GetProperty("quantityInStock").GetInt32());
+}
+
+[Theory]
+[InlineData("get")]
+[InlineData("confirm")]
+[InlineData("cancel")]
+public async Task OrderOperation_WhenOrderDoesNotExist_ReturnsNotFound(
+    string operation)
+{
+    using var client = CreateClient();
+
+    const int missingOrderId = int.MaxValue;
+
+    // Establish that this ID does not identify an existing order.
+    using var lookupResponse = await client.GetAsync(
+        $"/api/orders/{missingOrderId}");
+
+    Assert.Equal(
+        HttpStatusCode.NotFound,
+        lookupResponse.StatusCode);
+
+    using var response = operation switch
+    {
+        "get" => await client.GetAsync(
+            $"/api/orders/{missingOrderId}"),
+
+        "confirm" => await client.PostAsync(
+            $"/api/orders/{missingOrderId}/confirm",
+            content: null),
+
+        "cancel" => await client.PostAsync(
+            $"/api/orders/{missingOrderId}/cancel",
+            content: null),
+
+        _ => throw new ArgumentOutOfRangeException(nameof(operation))
+    };
+
+    Assert.Equal(
+        HttpStatusCode.NotFound,
+        response.StatusCode);
+}
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(
