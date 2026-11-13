@@ -170,6 +170,107 @@ public sealed class ProductInventoryTests
             savedMovement.GetProperty("reason").GetString());
     }
 
+    [Fact]
+public async Task StockOut_WhenQuantityExceedsBalance_PreservesInventory()
+{
+    using var client = CreateClient();
+
+    // Arrange: create an independent product and receive five units.
+    using var createResponse = await client.PostAsJsonAsync(
+        "/api/products",
+        new
+        {
+            name = "Insufficient Stock Test Product",
+            sku = $"TEST-{Guid.NewGuid():N}",
+            price = 100.00m
+        });
+
+    Assert.Equal(
+        HttpStatusCode.Created,
+        createResponse.StatusCode);
+
+    var created = await createResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    var productId = created.GetProperty("id").GetInt32();
+
+    using var stockInResponse = await client.PostAsJsonAsync(
+        "/api/inventory/stock-in",
+        new
+        {
+            productId,
+            quantity = 5,
+            reason = "Initial test stock"
+        });
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        stockInResponse.StatusCode);
+
+    var initialMovement = await stockInResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    var initialMovementId = initialMovement
+        .GetProperty("id")
+        .GetInt32();
+
+    // Act: request more stock than is available.
+    using var stockOutResponse = await client.PostAsJsonAsync(
+        "/api/inventory/stock-out",
+        new
+        {
+            productId,
+            quantity = 6,
+            reason = "Request exceeds available stock"
+        });
+
+    Assert.Equal(
+        HttpStatusCode.Conflict,
+        stockOutResponse.StatusCode);
+
+    // Assert: the rejected request did not change the saved balance.
+    using var productResponse = await client.GetAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        productResponse.StatusCode);
+
+    var product = await productResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        5,
+        product.GetProperty("quantityInStock").GetInt32());
+
+    using var historyResponse = await client.GetAsync(
+        $"/api/inventory/products/{productId}/history");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        historyResponse.StatusCode);
+
+    var history = await historyResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    // Only the original stock-in movement should remain.
+    Assert.Equal(1, history.GetArrayLength());
+
+    var savedMovement = history[0];
+
+    Assert.Equal(
+        initialMovementId,
+        savedMovement.GetProperty("id").GetInt32());
+
+    Assert.Equal(
+        0,
+        savedMovement.GetProperty("type").GetInt32());
+
+    Assert.Equal(
+        5,
+        savedMovement.GetProperty("quantity").GetInt32());
+}
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(
