@@ -114,6 +114,29 @@ public sealed class ProductQueryTests
         }
     }
 
+    [Theory]
+[InlineData("page=0")]
+[InlineData("page=-1")]
+[InlineData("pageSize=0")]
+[InlineData("pageSize=101")]
+[InlineData("minPrice=-1")]
+[InlineData("maxPrice=-1")]
+[InlineData("minPrice=200&maxPrice=100")]
+[InlineData("page=abc")]
+[InlineData("minPrice=abc")]
+public async Task GetProducts_WithInvalidQuery_ReturnsBadRequest(
+    string query)
+{
+    using var client = CreateClient();
+
+    using var response = await client.GetAsync(
+        $"/api/products?{query}");
+
+    Assert.Equal(
+        HttpStatusCode.BadRequest,
+        response.StatusCode);
+}
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(
