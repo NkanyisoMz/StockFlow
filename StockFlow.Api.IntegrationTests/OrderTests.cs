@@ -502,6 +502,115 @@ public async Task CancelOrder_WhenPending_PreservesInventoryAndRejectsRepeat()
         movement.GetProperty("quantity").GetInt32());
 }
 
+[Theory]
+[InlineData("cancel", "confirm", 2, 10, 1)]
+[InlineData("confirm", "confirm", 1, 8, 2)]
+[InlineData("confirm", "cancel", 1, 8, 2)]
+public async Task OrderTransition_WhenNotPending_PreservesExistingState(
+    string initialOperation,
+    string rejectedOperation,
+    int expectedStatus,
+    int expectedStock,
+    int expectedMovementCount)
+{
+    using var client = CreateClient();
+
+    var productId = await TestData.CreateProductAsync(
+        client,
+        price: 100.00m,
+        initialStock: 10);
+
+    var customerId = await TestData.CreateCustomerAsync(client);
+
+    var orderId = await TestData.CreateOrderAsync(
+        client,
+        customerId,
+        (productId, 2));
+
+    // Arrange: move the order out of Pending.
+    using var initialResponse = await client.PostAsync(
+        $"/api/orders/{orderId}/{initialOperation}",
+        content: null);
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        initialResponse.StatusCode);
+
+    // Act: attempt a transition that is no longer allowed.
+    using var rejectedResponse = await client.PostAsync(
+        $"/api/orders/{orderId}/{rejectedOperation}",
+        content: null);
+
+    Assert.Equal(
+        HttpStatusCode.Conflict,
+        rejectedResponse.StatusCode);
+
+    // Verify the original status and total remain persisted.
+    using var orderResponse = await client.GetAsync(
+        $"/api/orders/{orderId}");
+
+    Assert.Equal(HttpStatusCode.OK, orderResponse.StatusCode);
+
+    var order = await orderResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        expectedStatus,
+        order.GetProperty("status").GetInt32());
+
+    Assert.Equal(
+        200.00m,
+        order.GetProperty("totalAmount").GetDecimal());
+
+    using var productResponse = await client.GetAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
+
+    var product = await productResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        expectedStock,
+        product.GetProperty("quantityInStock").GetInt32());
+
+    using var historyResponse = await client.GetAsync(
+        $"/api/inventory/products/{productId}/history");
+
+    Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+
+    var history = await historyResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        expectedMovementCount,
+        history.GetArrayLength());
+
+    var stockIn = Assert.Single(
+        history.EnumerateArray(),
+        movement => movement.GetProperty("type").GetInt32() == 0);
+
+    Assert.Equal(
+        10,
+        stockIn.GetProperty("quantity").GetInt32());
+
+    if (initialOperation == "confirm")
+    {
+        // Confirmation deducted stock once; rejection must not deduct again.
+        var stockOut = Assert.Single(
+            history.EnumerateArray(),
+            movement => movement.GetProperty("type").GetInt32() == 1);
+
+        Assert.Equal(
+            2,
+            stockOut.GetProperty("quantity").GetInt32());
+
+        Assert.Equal(
+            $"Order #{orderId} confirmed",
+            stockOut.GetProperty("reason").GetString());
+    }
+}
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(
