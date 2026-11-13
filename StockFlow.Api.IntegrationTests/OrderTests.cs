@@ -190,6 +190,102 @@ public sealed class OrderTests : IClassFixture<PostgreSqlFixture>
         Assert.Equal(10, history[0].GetProperty("quantity").GetInt32());
     }
 
+    [Fact]
+public async Task ConfirmOrder_WhenStockIsAvailable_PersistsStockAndStatus()
+{
+    using var client = CreateClient();
+
+    var productId = await TestData.CreateProductAsync(
+        client,
+        price: 125.50m,
+        initialStock: 10);
+
+    var customerId = await TestData.CreateCustomerAsync(client);
+
+    var orderId = await TestData.CreateOrderAsync(
+        client,
+        customerId,
+        (productId, 2));
+
+    // Act: confirm the pending order.
+    using var confirmResponse = await client.PostAsync(
+        $"/api/orders/{orderId}/confirm",
+        content: null);
+
+    Assert.Equal(HttpStatusCode.OK, confirmResponse.StatusCode);
+
+    var confirmed = await confirmResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(orderId, confirmed.GetProperty("id").GetInt32());
+
+    // Confirmed is represented as 1 in the current HTTP contract.
+    Assert.Equal(1, confirmed.GetProperty("status").GetInt32());
+
+    // Verify the transition was persisted.
+    using var orderResponse = await client.GetAsync(
+        $"/api/orders/{orderId}");
+
+    Assert.Equal(HttpStatusCode.OK, orderResponse.StatusCode);
+
+    var savedOrder = await orderResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(1, savedOrder.GetProperty("status").GetInt32());
+
+    Assert.Equal(
+        251.00m,
+        savedOrder.GetProperty("totalAmount").GetDecimal());
+
+    using var productResponse = await client.GetAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
+
+    var product = await productResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        8,
+        product.GetProperty("quantityInStock").GetInt32());
+
+    using var historyResponse = await client.GetAsync(
+        $"/api/inventory/products/{productId}/history");
+
+    Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+
+    var history = await historyResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(2, history.GetArrayLength());
+
+    // Select by type rather than depending on history ordering.
+
+    var stockOut = Assert.Single(
+        history.EnumerateArray(),
+            movement => movement.GetProperty("type").GetInt32() == 1);
+
+    Assert.Equal(
+        productId,
+        stockOut.GetProperty("productId").GetInt32());
+
+    Assert.Equal(
+        2,
+        stockOut.GetProperty("quantity").GetInt32());
+
+    Assert.Equal(
+        $"Order #{orderId} confirmed",
+        stockOut.GetProperty("reason").GetString());
+
+    var stockIn = Assert.Single(
+        history.EnumerateArray(),
+            movement => movement.GetProperty("type").GetInt32() == 0);
+
+    Assert.Equal(
+        10,
+        stockIn.GetProperty("quantity").GetInt32());
+}
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(
