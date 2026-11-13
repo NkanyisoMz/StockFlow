@@ -611,6 +611,84 @@ public async Task OrderTransition_WhenNotPending_PreservesExistingState(
     }
 }
 
+[Theory]
+[InlineData("empty-items")]
+[InlineData("zero-quantity")]
+[InlineData("negative-quantity")]
+[InlineData("duplicate-product")]
+public async Task CreateOrder_WithInvalidItems_DoesNotPersistOrder(
+    string scenario)
+{
+    using var client = CreateClient();
+
+    var productId = await TestData.CreateProductAsync(
+        client,
+        price: 100.00m,
+        initialStock: 10);
+
+    var customerId = await TestData.CreateCustomerAsync(client);
+
+    var items = scenario switch
+    {
+        "empty-items" => Array.Empty<object>(),
+
+        "zero-quantity" => new object[]
+        {
+            new { productId, quantity = 0 }
+        },
+
+        "negative-quantity" => new object[]
+        {
+            new { productId, quantity = -1 }
+        },
+
+        "duplicate-product" => new object[]
+        {
+            new { productId, quantity = 1 },
+            new { productId, quantity = 2 }
+        },
+
+        _ => throw new ArgumentOutOfRangeException(nameof(scenario))
+    };
+
+    using var createResponse = await client.PostAsJsonAsync(
+        "/api/orders",
+        new { customerId, items });
+
+    Assert.Equal(
+        HttpStatusCode.BadRequest,
+        createResponse.StatusCode);
+
+    // This customer is unique to this test, so no orders should exist.
+    using var ordersResponse = await client.GetAsync(
+        $"/api/orders?customerId={customerId}");
+
+    Assert.Equal(HttpStatusCode.OK, ordersResponse.StatusCode);
+
+    var orders = await ordersResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        0,
+        orders.GetProperty("totalCount").GetInt32());
+
+    Assert.Equal(
+        0,
+        orders.GetProperty("items").GetArrayLength());
+
+    using var productResponse = await client.GetAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
+
+    var product = await productResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        10,
+        product.GetProperty("quantityInStock").GetInt32());
+}
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(
