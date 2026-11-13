@@ -390,6 +390,118 @@ public async Task ConfirmOrder_WhenOneProductHasInsufficientStock_PreservesAllSt
     }
 }
 
+[Fact]
+public async Task CancelOrder_WhenPending_PreservesInventoryAndRejectsRepeat()
+{
+    using var client = CreateClient();
+
+    var productId = await TestData.CreateProductAsync(
+        client,
+        price: 100.00m,
+        initialStock: 10);
+
+    var customerId = await TestData.CreateCustomerAsync(client);
+
+    var orderId = await TestData.CreateOrderAsync(
+        client,
+        customerId,
+        (productId, 2));
+
+    // Act: cancel the pending order.
+    using var cancelResponse = await client.PostAsync(
+        $"/api/orders/{orderId}/cancel",
+        content: null);
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        cancelResponse.StatusCode);
+
+    var cancelled = await cancelResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        orderId,
+        cancelled.GetProperty("id").GetInt32());
+
+    // Cancelled is represented as 2 in the current HTTP contract.
+    Assert.Equal(
+        2,
+        cancelled.GetProperty("status").GetInt32());
+
+    // A cancelled order cannot be cancelled again.
+    using var repeatResponse = await client.PostAsync(
+        $"/api/orders/{orderId}/cancel",
+        content: null);
+
+    Assert.Equal(
+        HttpStatusCode.Conflict,
+        repeatResponse.StatusCode);
+
+    // Verify the saved state after both requests.
+    using var orderResponse = await client.GetAsync(
+        $"/api/orders/{orderId}");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        orderResponse.StatusCode);
+
+    var order = await orderResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(2, order.GetProperty("status").GetInt32());
+
+    Assert.Equal(
+        200.00m,
+        order.GetProperty("totalAmount").GetDecimal());
+
+    var items = order.GetProperty("items");
+
+    Assert.Equal(1, items.GetArrayLength());
+    Assert.Equal(
+        productId,
+        items[0].GetProperty("productId").GetInt32());
+    Assert.Equal(
+        2,
+        items[0].GetProperty("quantity").GetInt32());
+
+    using var productResponse = await client.GetAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        productResponse.StatusCode);
+
+    var product = await productResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        10,
+        product.GetProperty("quantityInStock").GetInt32());
+
+    using var historyResponse = await client.GetAsync(
+        $"/api/inventory/products/{productId}/history");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        historyResponse.StatusCode);
+
+    var history = await historyResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    // Cancellation must not add a deduction or a compensating receipt.
+    Assert.Equal(1, history.GetArrayLength());
+
+    var movement = history[0];
+
+    Assert.Equal(
+        0,
+        movement.GetProperty("type").GetInt32());
+
+    Assert.Equal(
+        10,
+        movement.GetProperty("quantity").GetInt32());
+}
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(
