@@ -372,6 +372,114 @@ public async Task StockIn_WhenMaximumWouldBeExceeded_PreservesInventory()
         savedMovement.GetProperty("quantity").GetInt32());
 }
 
+[Fact]
+public async Task CreateProduct_WithDuplicateSku_PreservesOriginalProduct()
+{
+    using var client = CreateClient();
+
+    var sku = $"TEST-{Guid.NewGuid():N}";
+
+    using var originalResponse = await client.PostAsJsonAsync(
+        "/api/products",
+        new
+        {
+            name = "Original Product",
+            sku,
+            price = 100.00m
+        });
+
+    Assert.Equal(
+        HttpStatusCode.Created,
+        originalResponse.StatusCode);
+
+    var original = await originalResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    var productId = original.GetProperty("id").GetInt32();
+
+    using var duplicateResponse = await client.PostAsJsonAsync(
+        "/api/products",
+        new
+        {
+            name = "Duplicate Product",
+            sku,
+            price = 999.00m
+        });
+
+    Assert.Equal(
+        HttpStatusCode.Conflict,
+        duplicateResponse.StatusCode);
+
+    using var savedResponse = await client.GetAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(HttpStatusCode.OK, savedResponse.StatusCode);
+
+    var saved = await savedResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        "Original Product",
+        saved.GetProperty("name").GetString());
+
+    Assert.Equal(sku, saved.GetProperty("sku").GetString());
+
+    Assert.Equal(
+        100.00m,
+        saved.GetProperty("price").GetDecimal());
+
+}
+
+[Theory]
+[InlineData("-0.01")]
+[InlineData("1.001")]
+[InlineData("10000000000000000.00")]
+public async Task CreateProduct_WithInvalidPrice_DoesNotPersistProduct(
+    string priceText)
+{
+    using var client = CreateClient();
+
+    var uniqueName = $"InvalidPrice-{Guid.NewGuid():N}";
+
+    // Strings in InlineData preserve exact decimal values.
+    var price = decimal.Parse(
+        priceText,
+        System.Globalization.CultureInfo.InvariantCulture);
+
+    using var response = await client.PostAsJsonAsync(
+        "/api/products",
+        new
+        {
+            name = uniqueName,
+            sku = $"TEST-{Guid.NewGuid():N}",
+            price
+        });
+
+    Assert.Equal(
+        HttpStatusCode.BadRequest,
+        response.StatusCode);
+
+    using var searchResponse = await client.GetAsync(
+        $"/api/products?search={Uri.EscapeDataString(uniqueName)}");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        searchResponse.StatusCode);
+
+    var results = await searchResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        0,
+        results.GetProperty("totalCount").GetInt32());
+
+    Assert.Equal(
+        0,
+        results.GetProperty("items").GetArrayLength());
+}
+
+
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(
