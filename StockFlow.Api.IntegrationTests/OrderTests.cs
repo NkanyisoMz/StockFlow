@@ -286,6 +286,110 @@ public async Task ConfirmOrder_WhenStockIsAvailable_PersistsStockAndStatus()
         stockIn.GetProperty("quantity").GetInt32());
 }
 
+[Fact]
+public async Task ConfirmOrder_WhenOneProductHasInsufficientStock_PreservesAllState()
+{
+    using var client = CreateClient();
+
+    // Arrange: the first product can fulfill the order; the second cannot.
+    var firstProductId = await TestData.CreateProductAsync(
+        client,
+        price: 100.00m,
+        initialStock: 10);
+
+    var secondProductId = await TestData.CreateProductAsync(
+        client,
+        price: 50.00m,
+        initialStock: 1);
+
+    var customerId = await TestData.CreateCustomerAsync(client);
+
+    var orderId = await TestData.CreateOrderAsync(
+        client,
+        customerId,
+        (firstProductId, 2),
+        (secondProductId, 2));
+
+    // Act: confirmation must reject the entire order.
+    using var confirmResponse = await client.PostAsync(
+        $"/api/orders/{orderId}/confirm",
+        content: null);
+
+    Assert.Equal(
+        HttpStatusCode.Conflict,
+        confirmResponse.StatusCode);
+
+    // Verify the order remains pending with its original items and total.
+    using var orderResponse = await client.GetAsync(
+        $"/api/orders/{orderId}");
+
+    Assert.Equal(HttpStatusCode.OK, orderResponse.StatusCode);
+
+    var order = await orderResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(0, order.GetProperty("status").GetInt32());
+
+    Assert.Equal(
+        300.00m,
+        order.GetProperty("totalAmount").GetDecimal());
+
+    Assert.Equal(
+        2,
+        order.GetProperty("items").GetArrayLength());
+
+    // Check both products, including the one that had sufficient stock.
+    var expectedBalances = new[]
+    {
+        (ProductId: firstProductId, Quantity: 10),
+        (ProductId: secondProductId, Quantity: 1)
+    };
+
+    foreach (var expected in expectedBalances)
+    {
+        using var productResponse = await client.GetAsync(
+            $"/api/products/{expected.ProductId}");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            productResponse.StatusCode);
+
+        var product = await productResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            expected.Quantity,
+            product.GetProperty("quantityInStock").GetInt32());
+
+        using var historyResponse = await client.GetAsync(
+            $"/api/inventory/products/{expected.ProductId}/history");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            historyResponse.StatusCode);
+
+        var history = await historyResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        // Only the original receipt should exist for each product.
+        Assert.Equal(1, history.GetArrayLength());
+
+        var movement = history[0];
+
+        Assert.Equal(
+            expected.ProductId,
+            movement.GetProperty("productId").GetInt32());
+
+        Assert.Equal(
+            0,
+            movement.GetProperty("type").GetInt32());
+
+        Assert.Equal(
+            expected.Quantity,
+            movement.GetProperty("quantity").GetInt32());
+    }
+}
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(
