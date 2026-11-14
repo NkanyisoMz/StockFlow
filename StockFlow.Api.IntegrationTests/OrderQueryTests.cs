@@ -130,6 +130,31 @@ public sealed class OrderQueryTests
         }
     }
 
+    [Theory]
+[InlineData("page=0")]
+[InlineData("page=-1")]
+[InlineData("pageSize=0")]
+[InlineData("pageSize=101")]
+[InlineData("customerId=0")]
+[InlineData("customerId=-1")]
+[InlineData("page=abc")]
+[InlineData("customerId=abc")]
+[InlineData("status=unknown")]
+[InlineData("status=999")]
+[InlineData("status=-1")]
+public async Task GetOrders_WithInvalidQuery_ReturnsBadRequest(
+    string query)
+{
+    using var client = CreateClient();
+
+    using var response = await client.GetAsync(
+        $"/api/orders?{query}");
+
+    Assert.Equal(
+        HttpStatusCode.BadRequest,
+        response.StatusCode);
+}
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(

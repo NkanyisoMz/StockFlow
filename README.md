@@ -606,7 +606,7 @@ will be implemented during the testing milestone.
 | Scenario | Expected behavior |
 |---|---|
 | Delete a product referenced by order items or inventory movements | Return `409 Conflict`; preserve the product and all references. |
-| Filter orders using an undefined numeric status, such as `999` | Return `400 Bad Request`. |
+| Filter orders using an undefined numeric status, such as `999` | Return `400 Bad Request`. | ✅ Done |
 | Filter products using prices above 1,000,000 | Accept values within the supported product monetary range: 0 through 9,999,999,999,999,999.99. |
 | Request a valid page beyond the available results | Return `200 OK` with an empty `items` array and accurate pagination metadata. |
 

@@ -12,5 +12,6 @@ public class OrderQueryDto
     [Range(1, int.MaxValue)]
     public int? CustomerId { get; set; }
 
+    [EnumDataType(typeof(OrderStatus))]
     public OrderStatus? Status { get; set; }
 }
