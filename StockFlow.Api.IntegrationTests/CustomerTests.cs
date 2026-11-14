@@ -97,6 +97,122 @@ public sealed class CustomerTests : IClassFixture<PostgreSqlFixture>
             matchingCustomer.GetProperty("id").GetInt32());
     }
 
+    [Fact]
+public async Task UpdateCustomer_WithValidInput_PersistsChanges()
+{
+    using var client = CreateClient();
+
+    var customerId = await TestData.CreateCustomerAsync(client);
+    var normalizedEmail = $"updated-{Guid.NewGuid():N}@example.com";
+
+    using var updateResponse = await client.PutAsJsonAsync(
+        $"/api/customers/{customerId}",
+        new
+        {
+            name = "Updated Customer",
+            email = normalizedEmail.ToUpperInvariant()
+        });
+
+    Assert.Equal(
+        HttpStatusCode.NoContent,
+        updateResponse.StatusCode);
+
+    // A separate request verifies the saved values.
+    using var savedResponse = await client.GetAsync(
+        $"/api/customers/{customerId}");
+
+    Assert.Equal(HttpStatusCode.OK, savedResponse.StatusCode);
+
+    var saved = await savedResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        customerId,
+        saved.GetProperty("id").GetInt32());
+
+    Assert.Equal(
+        "Updated Customer",
+        saved.GetProperty("name").GetString());
+
+    Assert.Equal(
+        normalizedEmail,
+        saved.GetProperty("email").GetString());
+}
+
+[Fact]
+public async Task UpdateCustomer_WithAnotherCustomersEmail_PreservesOriginal()
+{
+    using var client = CreateClient();
+
+    var ownerId = await TestData.CreateCustomerAsync(client);
+    var targetId = await TestData.CreateCustomerAsync(client);
+
+    using var ownerResponse = await client.GetAsync(
+        $"/api/customers/{ownerId}");
+
+    Assert.Equal(HttpStatusCode.OK, ownerResponse.StatusCode);
+
+    var owner = await ownerResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    var ownerEmail = owner.GetProperty("email").GetString()!;
+
+    using var originalResponse = await client.GetAsync(
+        $"/api/customers/{targetId}");
+
+    Assert.Equal(HttpStatusCode.OK, originalResponse.StatusCode);
+
+    var original = await originalResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    var originalName = original.GetProperty("name").GetString();
+    var originalEmail = original.GetProperty("email").GetString();
+
+    // Attempt to assign an email already owned by another customer.
+    using var updateResponse = await client.PutAsJsonAsync(
+        $"/api/customers/{targetId}",
+        new
+        {
+            name = "Rejected Name Change",
+            email = ownerEmail.ToUpperInvariant()
+        });
+
+    Assert.Equal(
+        HttpStatusCode.Conflict,
+        updateResponse.StatusCode);
+
+    using var savedResponse = await client.GetAsync(
+        $"/api/customers/{targetId}");
+
+    Assert.Equal(HttpStatusCode.OK, savedResponse.StatusCode);
+
+    var saved = await savedResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    // Neither field should change when the update is rejected.
+    Assert.Equal(
+        originalName,
+        saved.GetProperty("name").GetString());
+
+    Assert.Equal(
+        originalEmail,
+        saved.GetProperty("email").GetString());
+
+    using var savedOwnerResponse = await client.GetAsync(
+        $"/api/customers/{ownerId}");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        savedOwnerResponse.StatusCode);
+
+    var savedOwner = await savedOwnerResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        ownerEmail,
+        savedOwner.GetProperty("email").GetString());
+}
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(
