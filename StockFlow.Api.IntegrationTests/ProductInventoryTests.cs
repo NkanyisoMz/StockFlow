@@ -527,6 +527,151 @@ public async Task DeleteProduct_WithInventoryHistory_ReturnsConflict()
         history[0].GetProperty("quantity").GetInt32());
 }
 
+[Fact]
+public async Task UpdateProduct_WithValidInput_PreservesStock()
+{
+    using var client = CreateClient();
+
+    var productId = await TestData.CreateProductAsync(
+        client,
+        price: 100.00m,
+        initialStock: 5);
+
+    var updatedSku = $"UPDATED-{Guid.NewGuid():N}";
+
+    using var updateResponse = await client.PutAsJsonAsync(
+        $"/api/products/{productId}",
+        new
+        {
+            name = "Updated Product",
+            sku = updatedSku,
+            price = 175.50m
+        });
+
+    Assert.Equal(
+        HttpStatusCode.NoContent,
+        updateResponse.StatusCode);
+
+    using var productResponse = await client.GetAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
+
+    var product = await productResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        "Updated Product",
+        product.GetProperty("name").GetString());
+
+    Assert.Equal(
+        updatedSku,
+        product.GetProperty("sku").GetString());
+
+    Assert.Equal(
+        175.50m,
+        product.GetProperty("price").GetDecimal());
+
+    Assert.Equal(
+        5,
+        product.GetProperty("quantityInStock").GetInt32());
+
+    using var historyResponse = await client.GetAsync(
+        $"/api/inventory/products/{productId}/history");
+
+    Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+
+    var history = await historyResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(1, history.GetArrayLength());
+    Assert.Equal(0, history[0].GetProperty("type").GetInt32());
+    Assert.Equal(5, history[0].GetProperty("quantity").GetInt32());
+}
+
+[Fact]
+public async Task DeleteProduct_WithoutReferences_RemovesProduct()
+{
+    using var client = CreateClient();
+
+    // Zero initial stock means the helper creates no inventory movement.
+    var productId = await TestData.CreateProductAsync(
+        client,
+        price: 100.00m,
+        initialStock: 0);
+
+    using var deleteResponse = await client.DeleteAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        deleteResponse.StatusCode);
+
+    using var productResponse = await client.GetAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(
+        HttpStatusCode.NotFound,
+        productResponse.StatusCode);
+}
+
+[Fact]
+public async Task DeleteProduct_WithOrderItems_ReturnsConflict()
+{
+    using var client = CreateClient();
+
+    // No inventory history: the order item is the reference blocking deletion.
+    var productId = await TestData.CreateProductAsync(
+        client,
+        price: 100.00m,
+        initialStock: 0);
+
+    var customerId = await TestData.CreateCustomerAsync(client);
+
+    var orderId = await TestData.CreateOrderAsync(
+        client,
+        customerId,
+        (productId, 2));
+
+    using var deleteResponse = await client.DeleteAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(
+        HttpStatusCode.Conflict,
+        deleteResponse.StatusCode);
+
+    using var productResponse = await client.GetAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
+
+    var product = await productResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        0,
+        product.GetProperty("quantityInStock").GetInt32());
+
+    using var orderResponse = await client.GetAsync(
+        $"/api/orders/{orderId}");
+
+    Assert.Equal(HttpStatusCode.OK, orderResponse.StatusCode);
+
+    var order = await orderResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(0, order.GetProperty("status").GetInt32());
+
+    var items = order.GetProperty("items");
+
+    Assert.Equal(1, items.GetArrayLength());
+    Assert.Equal(
+        productId,
+        items[0].GetProperty("productId").GetInt32());
+    Assert.Equal(
+        2,
+        items[0].GetProperty("quantity").GetInt32());
+}
 
     private HttpClient CreateClient()
     {
