@@ -1,159 +1,209 @@
 # StockFlow
 
-**StockFlow** is an Order and Inventory Management System under active development. Its backend is a REST API built with **C#, ASP.NET Core (.NET 10), Entity Framework Core, and PostgreSQL**. A **React + TypeScript** frontend is planned to provide a complete full-stack experience.
+StockFlow is an Order and Inventory Management System under active development. Its backend is a REST API built with C#, ASP.NET Core (.NET 10), Entity Framework Core, and PostgreSQL.
 
-StockFlow manages products, inventory, customers, and orders. It demonstrates RESTful API design, controller/service separation, dependency injection, relational data modelling, input validation, business rules, database integrity, transactions, and concurrency control.
+The application manages products, inventory, customers, and orders. It demonstrates controller/service separation, dependency injection, relational modelling, input validation, database constraints, transactions, and concurrency control.
 
+A React + TypeScript frontend is planned.
 
-**Project status:** Active development — product management, inventory management, customer management, and the core order lifecycle are implemented. Orders support creation, retrieval, filtering, pagination, transactional confirmation, and cancellation. Manual concurrency testing has verified stock consistency and protection against conflicting order operations.
+**Current status:** Core backend functionality and the baseline automated testing milestone are complete. The latest local test run passed all 81 integration test cases.
 
-**Next milestone:** Automated testing with xUnit, followed by authentication, frontend development, and deployment.
-
+**Next milestone:** JWT authentication and role-based authorization.
 
 ## Features
 
 ### Product Management
 
 - Create, retrieve, update, and delete products.
-- Search products by name (case-insensitive), filter by minimum and maximum price, and combine filters.
-- Paginate results with page number, page size, total count, and total pages.
-- Enforce unique SKUs and maximum lengths (100 characters for names, 50 for SKUs).
-- Create products with zero stock; update name, SKU, and price without directly changing stock.
-- Validate prices as non-negative amounts with at most two decimal places and within the supported `numeric(18,2)` range.
-- Return appropriate HTTP status codes for invalid requests, missing products, and SKU conflicts.
+- Search product names without case sensitivity.
+- Combine name search with minimum and maximum price filters.
+- Paginate results with total-count and total-page metadata.
+- Enforce unique SKUs.
+- Limit product names to 100 characters and SKUs to 50 characters.
+- Create products with zero stock.
+- Update name, SKU, and price without directly changing stock.
+- Validate prices as non-negative values with at most two decimal places,
+  within the supported `numeric(18,2)` range.
+- Reject deletion of products referenced by inventory movements or order
+  items with `409 Conflict`.
 
 ### Inventory Management
 
-- Receive stock (`StockIn`) and issue stock (`StockOut`) through dedicated endpoints.
-- Prevent insufficient-stock deductions and enforce a maximum of **100,000 units per product**.
-- Validate capacity before adding stock to avoid integer overflow.
-- Persist inventory movements with product ID, type, quantity, reason, and timestamp.
-- Retrieve product-specific movement history in reverse chronological order.
-- Return `200 OK` with an empty array for existing products without movements, or `404 Not Found` for nonexistent products.
-- Use EF Core transactions and PostgreSQL `SELECT ... FOR UPDATE` row locks to coordinate concurrent stock changes.
+- Receive stock through Stock-In and issue stock through Stock-Out.
+- Prevent deductions exceeding the available balance.
+- Enforce a maximum of 100,000 units per product.
+- Record movement type, quantity, reason, product ID, and timestamp.
+- Retrieve product-specific movement history, newest first.
+- Return an empty history for existing products without movements.
+- Coordinate stock changes using transactions and PostgreSQL row locks.
+
+Movement types:
+
+| Value | Meaning |
+|---|---|
+| `0` | StockIn |
+| `1` | StockOut |
 
 ### Customer Management
 
-- Create, retrieve, and update customers.
+- Create, list, retrieve, and update customers.
 - Store customer name, email, and creation timestamp.
-- Enforce unique customer emails and validate customer input.
-- Associate orders with existing customers through a foreign key.
+- Normalize emails to lowercase and enforce uniqueness.
+- Validate required fields, field lengths, and email format.
+- Associate orders with existing customers.
 
 ### Order Management
 
 - Create pending orders containing one or more products.
-- Verify the customer and referenced products exist; reject invalid quantities and duplicate product IDs in order creation.
-- Capture each product's unit price at order creation so later product-price changes do not alter the order's historical price.
-- Calculate order totals from line quantities and captured unit prices.
-- Persist orders and order items with relational constraints and decimal precision.
-- Confirm pending orders through a transaction that checks available stock, deducts quantities, records stock-out movements, and changes the order status to `Confirmed`.
-- Reject confirmation of already-confirmed or cancelled orders, nonexistent orders, and orders with insufficient stock.
-- Preserve the order's `Pending` status and inventory balances when confirmation fails.
-- Retrieve individual orders by ID, including their order items.
-- List orders with pagination, returning page number, page size, total count, and total pages.
-- Filter orders by customer ID (`customerId`) and status (`status`), including combined filters.
-- Sort orders by creation date (newest first), using order ID as a secondary sort key.
-- Validate pagination parameters, with a maximum page size of 100.
-- Cancel pending orders without modifying inventory quantities or creating inventory movements.
-- Reject cancellation of confirmed or already-cancelled orders with `409 Conflict`.
-- Use transactions and PostgreSQL row-level locking to coordinate concurrent confirmation and cancellation requests.
+- Validate customer and product references.
+- Reject non-positive quantities and duplicate product IDs.
+- Capture unit prices when orders are created.
+- Calculate totals from quantities and captured prices.
+- Retrieve individual orders with their items.
+- Filter orders by customer and status.
+- Paginate results and sort newest first, with descending order ID as
+  the secondary sort key.
+- Confirm pending orders and deduct inventory transactionally.
+- Cancel pending orders without changing inventory.
+- Reject confirmation or cancellation of orders that are no longer pending.
+- Coordinate competing confirmations and cancellations through row locks.
 
+Order statuses:
 
-**Order statuses:** `0` = `Pending`, `1` = `Confirmed`, `2` = `Cancelled`.
+| Value | Meaning |
+|---|---|
+| `0` | Pending |
+| `1` | Confirmed |
+| `2` | Cancelled |
 
-**Important:** Creating an order **does not** reserve or deduct stock. Inventory is deducted only when an order is successfully confirmed.
+Creating an order does not reserve or deduct stock. Stock is deducted only
+when confirmation succeeds.
 
-## Transaction and Concurrency Safety
+## Architecture
 
-StockFlow uses explicit EF Core transactions and PostgreSQL row-level locks for inventory consistency.
+StockFlow currently uses one API project and a separate integration-test
+project.
 
-**Stock-In and Stock-Out:**
+The main request flow is:
+
+```text
+HTTP request
+    → Controller
+    → Service
+    → StockFlowDbContext
+    → PostgreSQL
+    → HTTP response
+```
+
+- Controllers handle routes, request binding, and HTTP responses.
+- DTOs define accepted inputs and selected response shapes.
+- Services implement business rules and database operations.
+- EF Core entities represent persisted data.
+- StockFlowDbContext configures tables, relationships, and constraints.
+- Custom exceptions represent business failures and are translated by
+  controllers into HTTP responses.
+- Migrations version the database schema.
+
+Product and customer endpoints currently return entities. Order and
+inventory endpoints use response DTOs.
+
+## Transaction and Concurrency Handling
+
+### Stock-In and Stock-Out
 
 1. Begin a transaction.
 2. Lock the product row using `SELECT ... FOR UPDATE`.
-3. Validate the requested movement.
-4. Update the quantity and insert an inventory movement.
+3. Validate available stock or remaining capacity.
+4. Update the balance and insert an inventory movement.
 5. Save changes and commit.
 
-**Order confirmation:**
+### Order Confirmation
 
-1. Begin a transaction and lock the order row.
-2. Ensure the order is still `Pending`.
-3. Load order items, then lock distinct product rows in ascending product ID order.
-4. Aggregate quantities per product and verify that all required stock is available.
-5. Deduct stock and create one `StockOut` movement per distinct product.
-6. Mark the order `Confirmed`, save changes, and commit.
+1. Begin a transaction.
+2. Lock the order row.
+3. Require the order to be pending.
+4. Load order items.
+5. Lock distinct product rows in ascending product ID order.
+6. Aggregate required quantities and check every product balance.
+7. Deduct stock and create stock-out movements.
+8. Mark the order confirmed.
+9. Save changes and commit.
 
-If validation or saving fails before commit, the transaction is not committed and is rolled back on disposal. Locking the order prevents duplicate confirmation; locking product rows prevents competing confirmations and inventory operations from relying on stale stock balances.
+If an operation exits before commit, the uncommitted transaction is
+rolled back on disposal.
 
+### Order Cancellation
 
-**Order cancellation:**
+1. Begin a transaction.
+2. Lock the order row.
+3. Require the order to be pending.
+4. Set its status to cancelled.
+5. Save changes and commit.
 
-1. Begin a database transaction.
-2. Lock the order row using PostgreSQL `SELECT ... FOR UPDATE`.
-3. Verify that the order exists and has `Pending` status.
-4. Change the order status to `Cancelled`.
-5. Save changes and commit the transaction.
+Cancellation does not restore stock because pending orders have not
+consumed or reserved inventory.
 
-Cancellation does not restore or deduct inventory because pending orders have not reserved or consumed stock.
+Confirmation and cancellation lock the same order row before checking
+status. Inventory operations and confirmation lock product rows before
+changing balances.
 
-Both confirmation and cancellation lock the same order row before checking its status. This prevents conflicting operations from independently transitioning the same pending order.
+### Historical Manual Verification
 
-Order locks protect order status transitions, while product locks protect inventory quantities.
-
-
-### Manual Concurrency Tests Performed
+Manual checks were performed using PowerShell HTTP requests and
+PostgreSQL queries before the automated suite was introduced.
 
 | Scenario | Observed result |
 |---|---|
-| Two concurrent stock-out requests, each requesting 4 units from 5 available | One `200 OK`, one `409 Conflict`; final stock 1; one movement |
-| Confirm an order requesting 10 units when only 9 are available | `409 Conflict`; order remains pending; stock remains 9; no confirmation movements |
-| Two concurrent requests confirming the same order | One `200 OK`, one `409 Conflict`; stock deducted once; one movement |
-| Two different orders each requesting 5 units when 7 are available | One `200 OK`, one `409 Conflict`; confirmed/pending statuses; final stock 2; one movement of 5 units |
-| Concurrent confirmation and cancellation of the same pending order | Confirmation returned `200 OK`; cancellation returned `409 Conflict`; order #12 became `Confirmed`; product stock decreased from 2 to 1; exactly one StockOut movement was recorded |
+| Two stock-outs each requesting 4 units from 5 available | One success, one conflict; final stock 1; one deduction |
+| Confirmation requesting 10 units from 9 available | Conflict; order remained pending; stock and movements unchanged |
+| Two confirmations of the same order | One success, one conflict; stock deducted once |
+| Two orders each requesting 5 units from 7 available | One confirmed, one pending; final stock 2 |
+| Confirmation competing with cancellation | One transition succeeded; inventory matched the resulting status |
+| Cancellation of a pending order | Cancelled status; no inventory change |
+| Repeated cancellation or cancellation of a confirmed order | Conflict |
+| Cancellation of a nonexistent order | Not found |
 
-
-**Order cancellation verification:** Cancelling pending order #11 returned `200 OK` and changed its status to `Cancelled`. Repeated cancellation and cancellation of confirmed order #10 returned `409 Conflict`. Cancelling a nonexistent order returned `404 Not Found`. Inventory remained unchanged, and no cancellation inventory movement was created.
-
-These tests were performed manually using PowerShell HTTP requests and PostgreSQL queries. Automated regression and concurrency tests are planned.
-
+Automated concurrent-request coverage now complements these historical
+checks. Its scope and limitations are described under Testing.
 
 ## Database and Data Integrity
 
-- PostgreSQL persistence through Entity Framework Core and code-first migrations.
+- PostgreSQL persistence through EF Core and Npgsql.
+- Code-first migrations.
 - Unique indexes for product SKU and customer email.
-- Relationships between customers, orders, order items, products, and inventory movements.
-- Product, order-total, and order-item unit-price columns use `numeric(18,2)` precision.
-- Database CHECK constraints enforce non-negative prices and totals, positive order-item and movement quantities, and product stock between 0 and 100,000.
-- Restrictive foreign-key delete behavior protects referenced customer/product records; order items cascade with their parent order.
-- Database constraints complement service-layer validation, including for writes outside the API.
+- Foreign-key relationships between customers, orders, order items,
+  products, and inventory movements.
+- `numeric(18,2)` precision for product prices, order totals, and
+  order-item unit prices.
+- CHECK constraints for non-negative prices and totals, positive item
+  and movement quantities, and stock between 0 and 100,000.
+- Restricted deletion of referenced customer and product records.
+- Order items cascade when their parent order is deleted at the
+  database level.
 
-## Application Architecture
-
-- ASP.NET Core controller-based REST API.
-- Service layer for business logic and EF Core operations.
-- Dependency injection.
-- Request and response DTOs to separate HTTP contracts from database entities.
-- Asynchronous operations, LINQ filtering/projection, and EF Core change tracking.
-- Reusable `PagedResult<T>` for product and order pagination.
-- Query DTOs for filtering, pagination, and request validation.
-- Order response DTO mapping shared across creation, retrieval, confirmation, and cancellation.
-- Custom exceptions for business-rule failures, mapped to HTTP responses by controllers.
-- Explicit database transactions and PostgreSQL row locks for stock-changing operations.
+Database constraints reinforce application validation, including when
+writes bypass the API.
 
 ## Tech Stack
 
 | Technology | Purpose |
 |---|---|
 | C# / .NET 10 | Backend language and runtime |
-| ASP.NET Core Web API | HTTP endpoints and controllers |
-| Entity Framework Core | ORM, migrations, transactions |
-| PostgreSQL | Relational database, constraints, concurrency control |
+| ASP.NET Core Web API | Controllers and HTTP endpoints |
+| Entity Framework Core | Persistence, migrations, and transactions |
+| PostgreSQL | Relational storage, constraints, and row locks |
 | Npgsql | EF Core PostgreSQL provider |
+| xUnit | Automated test framework |
+| WebApplicationFactory | In-process API integration-test host |
+| Testcontainers | Disposable PostgreSQL test containers |
+| Docker Desktop | Container runtime for local integration tests |
 | Git / GitHub | Version control |
-| PowerShell / psql | Manual API and database testing |
-| React + TypeScript | **Planned** frontend |
-| Docker / CI/CD | **Planned** packaging and deployment |
+| PowerShell / psql | Manual API and database checks |
+| React + TypeScript | Planned frontend |
+| GitHub Actions | Planned CI/CD |
+
+Docker is currently used for integration-test databases. Application
+containerization and deployment are still planned.
 
 ## API Endpoints
 
@@ -161,38 +211,53 @@ These tests were performed manually using PowerShell HTTP requests and PostgreSQ
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/products` | List products with filtering and pagination |
-| GET | `/api/products/{id}` | Get product by ID |
-| POST | `/api/products` | Create product with zero initial stock |
+| GET | `/api/products` | Filter and paginate products |
+| GET | `/api/products/{id}` | Retrieve a product |
+| POST | `/api/products` | Create a product with zero stock |
 | PUT | `/api/products/{id}` | Update name, SKU, and price |
-| DELETE | `/api/products/{id}` | Delete product, subject to database relationships |
+| DELETE | `/api/products/{id}` | Delete an unreferenced product |
 
-**Product query parameters**
+Product query parameters:
 
 | Parameter | Description | Default |
 |---|---|---|
-| `search` | Case-insensitive product name search | None |
-| `minPrice` | Minimum product price | None |
-| `maxPrice` | Maximum product price | None |
-| `page` | Page number | 1 |
-| `pageSize` | Items per page (maximum 100) | 10 |
+| `search` | Case-insensitive name search | None |
+| `minPrice` | Inclusive minimum price | None |
+| `maxPrice` | Inclusive maximum price | None |
+| `page` | Page number, minimum 1 | 1 |
+| `pageSize` | Items per page, from 1 to 100 | 10 |
+
+Price filters support values from 0 through 9,999,999,999,999,999.99.
+The minimum cannot exceed the maximum.
 
 ```http
 GET /api/products?search=keyboard
 GET /api/products?minPrice=500&maxPrice=2000
-GET /api/products?page=1&pageSize=10
 GET /api/products?search=keyboard&minPrice=1000&maxPrice=2000&page=1&pageSize=5
 ```
 
-Example paginated response (illustrative data):
+Create-product body:
+
+```json
+{
+  "name": "USB-C Hub",
+  "sku": "HUB-USB-C-001",
+  "price": 450.00
+}
+```
+
+Success returns `201 Created`, including the generated ID and
+`quantityInStock: 0`.
+
+Example paginated response:
 
 ```json
 {
   "items": [
     {
       "id": 3,
-      "name": "Logitech Keyboard MX",
-      "sku": "KEY-LOG-MX",
+      "name": "Keyboard",
+      "sku": "KEY-001",
       "price": 1750.00,
       "quantityInStock": 17
     }
@@ -204,27 +269,15 @@ Example paginated response (illustrative data):
 }
 ```
 
-**Create product** — `POST /api/products`
-
-```json
-{
-  "name": "USB-C Hub",
-  "sku": "HUB-USB-C-001",
-  "price": 450.00
-}
-```
-
-A successful creation returns `201 Created` and the created product, including `quantityInStock: 0`. Stock is subsequently received through Stock-In.
-
 ### Inventory
 
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/inventory/stock-in` | Increase stock and record a movement |
 | POST | `/api/inventory/stock-out` | Decrease stock and record a movement |
-| GET | `/api/inventory/products/{productId}/history` | Get a product's movement history |
+| GET | `/api/inventory/products/{productId}/history` | Retrieve movement history |
 
-**Stock-In** — `POST /api/inventory/stock-in`
+Stock-In body:
 
 ```json
 {
@@ -234,7 +287,7 @@ A successful creation returns `201 Created` and the created product, including `
 }
 ```
 
-**Stock-Out** — `POST /api/inventory/stock-out`
+Stock-Out body:
 
 ```json
 {
@@ -244,7 +297,7 @@ A successful creation returns `201 Created` and the created product, including `
 }
 ```
 
-Successful movements return `200 OK` and a movement response similar to:
+Successful movements return `200 OK` with the movement record.
 
 ```json
 {
@@ -257,43 +310,60 @@ Successful movements return `200 OK` and a movement response similar to:
 }
 ```
 
-Movement types: `0` = `StockIn`, `1` = `StockOut`. Insufficient stock or exceeding the stock limit returns `409 Conflict`.
+Insufficient stock or exceeding capacity returns `409 Conflict`.
 
-**Inventory history** — `GET /api/inventory/products/12/history`
-
-Returns an array of movements, most recent first. Existing products without movements return `200 OK` with `[]`; nonexistent products return `404 Not Found`.
+History returns movements newest first. An existing product without
+movements returns `200 OK` with `[]`; a missing product returns `404`.
 
 ### Customers
 
-The customer module supports customer creation, retrieval, and updates. The exact customer endpoint routes and payload examples can be added after checking the current `CustomersController` so the documentation matches the implementation precisely.
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/customers` | Create a customer |
+| GET | `/api/customers` | List customers |
+| GET | `/api/customers/{id}` | Retrieve a customer |
+| PUT | `/api/customers/{id}` | Update a customer |
+
+Create and update body:
+
+```json
+{
+  "name": "Test Customer",
+  "email": "customer@example.com"
+}
+```
+
+Creation returns `201 Created`; successful updates return `204 No Content`.
+Duplicate emails return `409 Conflict`.
+
+Names are limited to 100 characters and emails to 150 characters.
+Email addresses must pass input-format validation.
 
 ### Orders
-
 
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/orders` | Create a pending order |
-| GET | `/api/orders` | List orders with filtering and pagination |
+| GET | `/api/orders` | Filter and paginate orders |
 | GET | `/api/orders/{id}` | Retrieve an order with its items |
-| POST | `/api/orders/{id}/confirm` | Confirm a pending order and deduct inventory atomically |
-| POST | `/api/orders/{id}/cancel` | Cancel a pending order without changing inventory |
+| POST | `/api/orders/{id}/confirm` | Confirm and deduct stock |
+| POST | `/api/orders/{id}/cancel` | Cancel a pending order |
 
-
-**Create order** — `POST /api/orders`
+Create-order body:
 
 ```json
 {
   "customerId": 1,
   "items": [
     { "productId": 3, "quantity": 1 },
-    { "productId": 6, "quantity": 1 }
+    { "productId": 6, "quantity": 2 }
   ]
 }
 ```
 
-Success: `201 Created`. The response includes order ID, customer ID, date, status, total amount, and order items with captured unit prices and calculated line totals.
+Creation returns `201 Created`.
 
-Example response (illustrative order ID):
+Example order response:
 
 ```json
 {
@@ -301,7 +371,7 @@ Example response (illustrative order ID):
   "customerId": 1,
   "orderDate": "2026-10-22T22:47:39.995729Z",
   "status": 0,
-  "totalAmount": 2549.99,
+  "totalAmount": 3349.98,
   "items": [
     {
       "id": 7,
@@ -313,180 +383,124 @@ Example response (illustrative order ID):
     {
       "id": 8,
       "productId": 6,
-      "quantity": 1,
+      "quantity": 2,
       "unitPrice": 799.99,
-      "lineTotal": 799.99
+      "lineTotal": 1599.98
     }
   ]
 }
 ```
 
-Invalid order input returns `400 Bad Request`; a nonexistent customer or referenced product returns `404 Not Found`.
-
-**Confirm order** — `POST /api/orders/{id}/confirm`
-
-```http
-POST /api/orders/4/confirm
-```
-
-Success: `200 OK`, with the updated order response and `status: 1` (`Confirmed`). Stock deductions and inventory movement records are committed together.
-
-| Situation | Response |
-|---|---|
-| Order confirmed | `200 OK` |
-| Order does not exist | `404 Not Found` |
-| Referenced product does not exist | `404 Not Found` |
-| Order is already confirmed or cancelled | `409 Conflict` |
-| Insufficient stock | `409 Conflict` |
-
-
-**Get order by ID** — `GET /api/orders/{id}`
-
-```http
-GET /api/orders/4
-```
-
-Returns `200 OK` with the order's ID, customer ID, date, status, total amount, and order items.
-
-Returns `404 Not Found` if the order does not exist.
-
-**List orders** — `GET /api/orders`
-
-Supports pagination and optional filtering by customer and order status.
+Order query parameters:
 
 | Parameter | Description | Default |
 |---|---|---|
-| `customerId` | Filter by customer ID | None |
-| `status` | Filter by order status (`0`, `1`, `2`) | None |
-| `page` | Page number (minimum 1) | 1 |
-| `pageSize` | Items per page (1–100) | 10 |
-
-Examples:
+| `customerId` | Filter by a positive customer ID | None |
+| `status` | Filter by `0`, `1`, or `2` | None |
+| `page` | Page number, minimum 1 | 1 |
+| `pageSize` | Items per page, from 1 to 100 | 10 |
 
 ```http
-GET /api/orders
-GET /api/orders?page=1&pageSize=5
 GET /api/orders?customerId=1
 GET /api/orders?status=1
 GET /api/orders?customerId=1&status=1&page=1&pageSize=10
 ```
 
-Orders are returned newest first, with order ID used as a secondary sorting key.
+Undefined numeric statuses and invalid query parameters return `400`.
 
-Example paginated response (illustrative data):
+Order lists use the same pagination envelope as product lists, with
+order response objects in `items`.
 
-```json
-{
-  "items": [
-    {
-      "id": 12,
-      "customerId": 1,
-      "orderDate": "2026-10-31T12:00:00Z",
-      "status": 1,
-      "totalAmount": 799.99,
-      "items": [
-        {
-          "id": 19,
-          "productId": 6,
-          "quantity": 1,
-          "unitPrice": 799.99,
-          "lineTotal": 799.99
-        }
-      ]
-    }
-  ],
-  "page": 1,
-  "pageSize": 10,
-  "totalCount": 1,
-  "totalPages": 1
-}
-```
+Confirmation and cancellation return `200 OK` with the updated order.
+Missing orders return `404`. Transitions from a non-pending status return
+`409`. Insufficient stock during confirmation also returns `409`.
 
-Invalid pagination parameters return `400 Bad Request`.
-
-**Cancel order** — `POST /api/orders/{id}/cancel`
-
-```http
-POST /api/orders/11/cancel
-```
-
-Cancels an order only if its current status is `Pending`.
-
-Successful cancellation returns `200 OK` with the updated order response and `status: 2` (`Cancelled`).
-
-| Situation | Response |
-|---|---|
-| Pending order cancelled | `200 OK` |
-| Order does not exist | `404 Not Found` |
-| Order is already confirmed | `409 Conflict` |
-| Order is already cancelled | `409 Conflict` |
-
-Cancellation does not modify product stock or create inventory movements.
-
-Confirmation and cancellation use row-level locking to prevent conflicting state transitions when requests execute concurrently.
-
+All IDs and response data in these examples are illustrative.
 
 ## Validation and Error Handling
 
-| HTTP Status | Typical meaning |
+| HTTP status | Typical meaning |
 |---|---|
-| `200 OK` | Successful retrieval, stock movement, order confirmation, order cancellation, or other successful operation |
+| `200 OK` | Successful retrieval, deletion, stock movement, or order transition |
 | `201 Created` | Product, customer, or order created |
-| `204 No Content` | Successful update where no response body is returned |
-| `400 Bad Request` | Invalid request, invalid quantities/prices, or invalid query parameters |
-| `404 Not Found` | Requested product, customer, or order not found |
-| `409 Conflict` | Duplicate SKU/email, stock-limit or insufficient-stock violation, duplicate confirmation, or cancellation of a non-pending order |
+| `204 No Content` | Successful product or customer update |
+| `400 Bad Request` | Invalid input or query parameters |
+| `404 Not Found` | Requested resource or order reference does not exist |
+| `409 Conflict` | Duplicate SKU/email, referenced-product deletion, stock violation, or invalid order transition |
 
-Validation occurs at the request/service layers and is reinforced by database constraints. For example, product stock cannot be modified through product update DTOs; it must be changed using inventory operations or a successful order confirmation.
+Validation occurs through request DTOs and service rules, reinforced by
+database constraints.
 
 ## Project Structure
 
-The following is a **representative structure**, highlighting the principal modules rather than every file:
+The following highlights the main files and folders:
 
 ```text
 StockFlow/
 ├── StockFlow.slnx
-└── StockFlow.Api/
-    ├── Common/
-    │   └── PagedResult.cs
-    ├── Controllers/
-    │   ├── ProductsController.cs
-    │   ├── InventoryController.cs
-    │   ├── CustomersController.cs
-    │   └── OrdersController.cs
-    ├── Data/
-    │   └── StockFlowDbContext.cs
-    ├── DTOs/
-    │   ├── ... product DTOs
-    │   ├── ... inventory DTOs
-    │   ├── ... customer DTOs
-    │   ├── CreateOrderDto.cs
-    │   ├── CreateOrderItemDto.cs
-    │   ├── OrderResponseDto.cs
-    │   └── OrderItemResponseDto.cs
-    ├── Exceptions/
-    │   └── ... business exceptions
-    ├── Migrations/
-    ├── Models/
-    │   ├── Product.cs
-    │   ├── InventoryMovement.cs
-    │   ├── MovementType.cs
-    │   ├── Customer.cs
-    │   ├── Order.cs
-    │   ├── OrderItem.cs
-    │   └── OrderStatus.cs
-    ├── Services/
-    │   ├── ProductService.cs
-    │   ├── InventoryService.cs
-    │   ├── CustomerService.cs
-    │   └── OrderService.cs
-    ├── Program.cs
-    └── appsettings.json
+├── StockFlow.Api/
+│   ├── Common/
+│   │   └── PagedResult.cs
+│   ├── Controllers/
+│   ├── Data/
+│   │   └── StockFlowDbContext.cs
+│   ├── Dtos/
+│   ├── Exceptions/
+│   ├── Migrations/
+│   ├── Models/
+│   ├── Services/
+│   ├── Product.cs
+│   ├── Program.cs
+│   ├── StockFlow.Api.csproj
+│   ├── StockFlow.Api.http
+│   └── appsettings.json
+└── StockFlow.Api.IntegrationTests/
+    ├── Infrastructure/
+    │   ├── StockFlowApiFactory.cs
+    │   ├── PostgreSqlFixture.cs
+    │   └── TestData.cs
+    ├── InfrastructureTests.cs
+    ├── ProductInventoryTests.cs
+    ├── ProductQueryTests.cs
+    ├── CustomerTests.cs
+    ├── InputValidationTests.cs
+    ├── OrderTests.cs
+    ├── OrderQueryTests.cs
+    ├── InventoryConcurrencyTests.cs
+    ├── OrderConcurrencyTests.cs
+    └── DatabaseConstraintTests.cs
 ```
 
 ## Getting Started
 
-### Restore and build
+### Prerequisites
+
+- .NET 10 SDK
+- PostgreSQL for local application development
+- EF Core CLI (`dotnet-ef`) compatible with EF Core 10
+- Docker Desktop with Linux containers for integration tests
+
+### 1. Clone the Repository
+
+```powershell
+git clone https://github.com/NkanyisoMz/StockFlow.git
+cd StockFlow
+```
+
+### 2. Configure the Development Database
+
+Create a PostgreSQL database named `stockflow`.
+
+Configure `ConnectionStrings:DefaultConnection` using .NET user secrets
+or environment configuration. Do not commit real credentials.
+
+Example user-secrets command; replace the placeholder password locally:
+
+```powershell
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=stockflow;Username=postgres;Password=YOUR_PASSWORD" --project StockFlow.Api
+```
+
+### 3. Restore and Build
 
 From the repository root:
 
@@ -495,207 +509,199 @@ dotnet restore
 dotnet build --no-restore
 ```
 
-### Apply database migrations
-
-Configure `ConnectionStrings:DefaultConnection` for your local development
-database, then run:
+### 4. Apply Migrations
 
 ```powershell
-dotnet ef database update --project StockFlow.Api
-```
-
-### Run the API
-
-```powershell
-dotnet run --project StockFlow.Api
-```
-
-Use the application URL printed in the terminal for API requests.
-
-### Prerequisites
-
-- .NET 10 SDK
-- PostgreSQL
-- EF Core CLI (`dotnet-ef`)
-
-### 1. Clone the repository
-
-```bash
-git clone <repository-url>
-cd StockFlow
-```
-
-Replace `<repository-url>` with the repository's actual GitHub URL.
-
-### 2. Configure PostgreSQL
-
-Create a database named `stockflow`. Configure `ConnectionStrings:DefaultConnection` through local development configuration or .NET user secrets, and confirm that the key matches the one used by `Program.cs`.
-
-Example configuration (**do not commit real credentials**):
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=stockflow;Username=postgres;Password=YOUR_PASSWORD"
-  }
-}
-```
-
-### 3. Apply migrations
-
-From the solution root:
-
-```bash
 dotnet ef database update --project StockFlow.Api --startup-project StockFlow.Api
 ```
 
-### 4. Run the API
+### 5. Run the API
 
-```bash
+```powershell
 dotnet run --project StockFlow.Api
 ```
 
-Use the local URL displayed in the terminal (for example, `http://localhost:5230`).
+Use the application URL printed in the terminal.
 
 ## Testing
 
-Automated integration tests are planned using xUnit and an isolated
-PostgreSQL database. The following rules define the expected behavior
-for regression testing.
+The baseline integration-testing milestone is complete. The latest
+local run passed all 81 test cases with no failures or skipped tests.
 
-### Business Rules
+### Test Infrastructure
+
+The suite uses:
+
+- xUnit for test execution.
+- WebApplicationFactory to host the real API in the test process.
+- Testcontainers to start disposable PostgreSQL containers.
+- EF Core migrations to create the actual database schema.
+
+The fixture supplies the test connection string. Integration tests do
+not require the development database or its credentials.
+
+### Run the Suite
+
+Ensure Docker Desktop is running with Linux containers:
+
+```powershell
+docker info --format '{{.OSType}}'
+```
+
+Expected output:
+
+```text
+linux
+```
+
+Run from the repository root:
+
+```powershell
+dotnet test StockFlow.Api.IntegrationTests
+```
+
+Alternatively, build first and run the compiled tests:
+
+```powershell
+dotnet build
+dotnet test StockFlow.Api.IntegrationTests --no-build
+```
+
+The first run may take longer while packages and container images are
+downloaded.
+
+No manually created test container is required. The fixture starts
+PostgreSQL, applies migrations, and removes the container during cleanup.
+
+### Automated Coverage
+
+| Area | Covered scenarios |
+|---|---|
+| Products | Creation, zero initial stock, updates preserving inventory, successful deletion, referenced-product deletion, duplicate SKU, and invalid prices |
+| Customers | Email normalization and uniqueness, updates, update conflicts, required fields, email format, and length limits |
+| Inventory | Successful receipt, insufficient-stock rejection, maximum-stock boundary, invalid quantities, and persisted movement history |
+| Orders | Price capture, totals, unchanged stock on creation, confirmation, cancellation, invalid transitions, invalid items, and missing references |
+| Queries | Combined filters, pagination metadata, result ordering, empty pages, and invalid parameters |
+| Database constraints | Stock bounds, unique SKU, and product-reference deletion restrictions |
+| Concurrent requests | Competing stock-outs, duplicate confirmation, competing orders, confirmation versus cancellation, and stock-out versus confirmation |
+
+Tests check HTTP responses and persisted state where relevant.
+
+### Business Rules Preserved
 
 - Products start with zero stock.
-- Product updates cannot change stock quantities.
-- Stock must remain between 0 and 100,000 units.
-- Order items capture product prices when the order is created.
+- Product updates do not change stock.
+- Stock remains between 0 and 100,000 units.
+- Order items retain captured prices after product prices change.
 - Pending orders do not reserve or deduct stock.
 - Only pending orders can be confirmed or cancelled.
-- Confirmation commits stock deductions, inventory movements, and
-  order status changes together.
-- Failed confirmation leaves persisted stock, movements, and order
-  status unchanged.
-- Cancellation does not change stock or create inventory movements.
-- Concurrent operations must not deduct stock twice or allow
-  conflicting order state transitions.
+- Successful confirmation persists status, deductions, and movements together.
+- Insufficient-stock confirmation leaves all product balances unchanged.
+- Cancellation does not change inventory.
+- Rejected transitions do not create additional deductions.
+
+### Verified Edge Cases
+
+| Scenario | Behavior |
+|---|---|
+| Delete a product referenced by inventory movements or order items | `409 Conflict`; product and references remain |
+| Filter orders using an undefined numeric status | `400 Bad Request` |
+| Filter products using prices above 1,000,000 | Accepted within the supported monetary range |
+| Request a valid page beyond the available results | `200 OK`, empty items, and accurate pagination metadata |
+
+### Isolation and Limitations
+
+Each test class owns a disposable PostgreSQL container. Test methods
+within a class share its database and create independent data using
+unique values and resource-specific assertions.
+
+Concurrent-request tests start competing requests before awaiting their
+results. They verify consistent outcomes but do not force a specific
+database interleaving or prove that lock waiting occurred.
+
+Insufficient-stock tests verify that rejection preserves persisted
+state. They do not inject a database failure after writes to independently
+prove every rollback path.
+
+The suite is baseline regression coverage, not exhaustive testing of
+every endpoint, field combination, or failure mode. It currently
+contains integration tests rather than a separate unit-test suite.
 
 ### Manual API Checks
 
-Use `StockFlow.Api/StockFlow.Api.http` to exercise the API.
-
-The main verification flow is:
+Use `StockFlow.Api/StockFlow.Api.http` for the main workflow:
 
 1. Create a product.
 2. Receive stock.
 3. Create a customer.
 4. Create an order.
 5. Confirm the order.
-6. Verify the product balance and inventory movement history.
+6. Check the saved order, stock balance, and movement history.
 
-Separately, create and cancel a pending order, then verify that its
-status changes without affecting inventory.
+Separately, create and cancel a pending order and verify that inventory
+does not change.
 
 Replace example IDs with values returned by preceding requests.
 
-### Expected Edge-Case Behavior
-
-The following decisions define expected behavior for regression tests.
-They are pending automated verification; cases not currently supported
-will be implemented during the testing milestone.
-
-| Scenario | Expected behavior |
-|---|---|
-| Delete a product referenced by order items or inventory movements | Return `409 Conflict`; preserve the product and all references. |
-| Filter orders using an undefined numeric status, such as `999` | Return `400 Bad Request`. | ✅ Done |
-| Filter products using prices above 1,000,000 | Accept values within the supported product monetary range: 0 through 9,999,999,999,999,999.99. |
-| Request a valid page beyond the available results | Return `200 OK` with an empty `items` array and accurate pagination metadata. |
-
-Each case will receive an automated regression test. Any required fix
-must preserve existing business rules, database constraints, transaction
-boundaries, and concurrency guarantees.
-
-### Automated Testing Status
-
-The test project and PostgreSQL integration-test fixture have not yet
-been added. Test commands will be documented once the suite is available.
-
 ## Development Roadmap
 
-### Backend Foundation and Products
+### Backend Foundation
 
-- [x] ASP.NET Core controller/service architecture and dependency injection
-- [x] PostgreSQL integration and EF Core migrations
-- [x] Product CRUD, DTOs, validation, and unique SKU enforcement
-- [x] Product search, price filtering, and pagination
-- [x] Database constraints and price precision
-- [x] Restrict direct stock changes through product CRUD
+- [x] Controller/service architecture and dependency injection
+- [x] PostgreSQL persistence and EF Core migrations
+- [x] Product management, filtering, and pagination
+- [x] Inventory operations and movement history
+- [x] Customer management and email uniqueness
+- [x] Order creation and captured prices
+- [x] Order retrieval, filtering, and pagination
+- [x] Transactional confirmation and cancellation
+- [x] Database constraints and row-level locking
 
-### Inventory Management
+### Baseline Automated Testing
 
-- [x] Inventory movement model and history
-- [x] Stock-In and Stock-Out endpoints
-- [x] Stock limits and insufficient-stock validation
-- [x] Explicit transactions and PostgreSQL row-level locking
-- [x] Manual concurrent Stock-Out test
-- [ ] Automated inventory integration/concurrency tests
+- [x] xUnit integration-test project
+- [x] Disposable PostgreSQL fixture and real migrations
+- [x] Core API behavior and validation coverage
+- [x] Regression tests for documented edge cases
+- [x] Essential direct database-constraint checks
+- [x] Concurrent-request outcome checks
+- [x] Local suite passing with 81 test cases
 
-### Customers and Orders
+### Authentication and Authorization — Next
 
-- [x] Customer management and unique email enforcement
-- [x] Order and order-item schema, relationships, and migrations
-- [x] Pending order creation, item-price capture, and total calculation
-- [x] Transactional order confirmation and inventory deductions
-- [x] Order confirmation movements and duplicate-confirmation protection
-- [x] Manual insufficient-stock, rollback, and concurrency tests
-- [x] Retrieve individual orders with their order items
-- [x] List orders with pagination and total-count metadata
-- [x] Filter orders by customer ID and status
-- [x] Combine order filters and validate pagination parameters
-- [x] Cancel pending orders without modifying inventory
-- [x] Reject cancellation of confirmed and already-cancelled orders
-- [x] Manual cancellation tests and database consistency verification
-- [x] Manual concurrent confirmation-versus-cancellation test
+- [ ] User-account and password management
+- [ ] JWT authentication
+- [ ] Role-based authorization
+- [ ] Authentication and permission integration tests
 
-
-### Security and Quality
-
-- [ ] Automated unit and integration tests (including concurrency scenarios)
-- [ ] Authentication and JWT authorization
-- [ ] Role-based access control
-- [ ] Additional API hardening and documentation
+Authentication and role-based access control are not implemented yet.
 
 ### React + TypeScript Frontend
 
-- [ ] React + TypeScript application setup
-- [ ] Product management interface
-- [ ] Inventory management and movement history
-- [ ] Customer and order management interfaces
-- [ ] Dashboard with inventory and order summaries
+- [ ] Application setup and login
+- [ ] Product management
+- [ ] Inventory operations and movement history
+- [ ] Customer management
+- [ ] Order creation, listing, details, confirmation, and cancellation
 
-### Deployment and Portfolio
+### Packaging and Deployment
 
-- [ ] Docker containerization
-- [ ] CI/CD pipeline
+- [ ] Application Docker images and local Compose setup
+- [ ] GitHub Actions build and test pipeline
 - [ ] Cloud deployment
-- [ ] Final README refinements, API documentation, and portfolio screenshots
+- [ ] Deployment configuration, backups, and operational documentation
+- [ ] Final API documentation and portfolio screenshots
 
-**Possible future extension:** Supplier management (not part of the currently completed modules).
-
+Supplier management remains a possible future extension outside the
+current scope.
 
 ## Current Development Priority
 
-**Milestone 5 — Order Management: Complete**
+The baseline automated testing milestone is complete.
 
-The core order lifecycle is implemented and manually verified, including creation, retrieval, filtering, pagination, transactional confirmation, cancellation, and concurrency protection.
+The next milestone is JWT authentication and role-based authorization.
+Implementation will preserve the existing business rules, database
+constraints, transaction boundaries, and row-locking behavior.
 
-**Next milestone: Milestone 6 — Automated Testing with xUnit**
-
-Planned testing priorities:
-
-1. Unit tests for business rules and validation.
-2. Integration tests for critical API endpoints.
-3. Transaction rollback tests for failed order confirmations.
-4. PostgreSQL-backed concurrency tests for inventory operations and conflicting order state transitions.
-
-Following automated testing, development will continue with authentication and role-based authorization, the React + TypeScript frontend, Docker, CI/CD, and cloud deployment.
-
+Subsequent milestones are the React + TypeScript frontend, application
+containerization, GitHub Actions CI/CD, and cloud deployment.
