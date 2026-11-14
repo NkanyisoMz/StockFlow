@@ -124,6 +124,8 @@ public sealed class ProductQueryTests
 [InlineData("minPrice=200&maxPrice=100")]
 [InlineData("page=abc")]
 [InlineData("minPrice=abc")]
+[InlineData("minPrice=10000000000000000")]
+[InlineData("maxPrice=10000000000000000")]
 public async Task GetProducts_WithInvalidQuery_ReturnsBadRequest(
     string query)
 {
@@ -135,6 +137,60 @@ public async Task GetProducts_WithInvalidQuery_ReturnsBadRequest(
     Assert.Equal(
         HttpStatusCode.BadRequest,
         response.StatusCode);
+}
+
+[Fact]
+public async Task GetProducts_WithHighPriceFilters_ReturnsMatchingProduct()
+{
+    using var client = CreateClient();
+
+    var uniqueName = $"HighPrice-{Guid.NewGuid():N}";
+
+    using var createResponse = await client.PostAsJsonAsync(
+        "/api/products",
+        new
+        {
+            name = uniqueName,
+            sku = $"TEST-{Guid.NewGuid():N}",
+            price = 1_500_000.00m
+        });
+
+    Assert.Equal(
+        HttpStatusCode.Created,
+        createResponse.StatusCode);
+
+    var created = await createResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    var productId = created.GetProperty("id").GetInt32();
+
+    using var queryResponse = await client.GetAsync(
+        "/api/products"
+        + $"?search={Uri.EscapeDataString(uniqueName)}"
+        + "&minPrice=1000000.01&maxPrice=2000000");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        queryResponse.StatusCode);
+
+    var result = await queryResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        1,
+        result.GetProperty("totalCount").GetInt32());
+
+    var items = result.GetProperty("items");
+
+    Assert.Equal(1, items.GetArrayLength());
+
+    Assert.Equal(
+        productId,
+        items[0].GetProperty("id").GetInt32());
+
+    Assert.Equal(
+        1_500_000.00m,
+        items[0].GetProperty("price").GetDecimal());
 }
 
     private HttpClient CreateClient()
