@@ -357,6 +357,124 @@ public async Task ConfirmAndCancel_WhenRequestsCompete_OnlyOneTransitionSucceeds
     }
 }
 
+[Fact]
+public async Task StockOutAndConfirm_WhenRequestsCompete_PreserveInventory()
+{
+    using var inventoryClient = CreateClient();
+    using var orderClient = CreateClient();
+
+    var productId = await TestData.CreateProductAsync(
+        inventoryClient,
+        price: 100.00m,
+        initialStock: 5);
+
+    var customerId = await TestData.CreateCustomerAsync(orderClient);
+
+    var orderId = await TestData.CreateOrderAsync(
+        orderClient,
+        customerId,
+        (productId, 4));
+
+    const string manualReason = "Competing manual stock-out";
+
+    var stockOutRequest = inventoryClient.PostAsJsonAsync(
+        "/api/inventory/stock-out",
+        new
+        {
+            productId,
+            quantity = 4,
+            reason = manualReason
+        });
+
+    var confirmRequest = orderClient.PostAsync(
+        $"/api/orders/{orderId}/confirm",
+        content: null);
+
+    var responses = await Task.WhenAll(
+        stockOutRequest,
+        confirmRequest);
+
+    using var stockOutResponse = responses[0];
+    using var confirmResponse = responses[1];
+
+    Assert.Single(
+        responses,
+        response => response.StatusCode == HttpStatusCode.OK);
+
+    Assert.Single(
+        responses,
+        response => response.StatusCode == HttpStatusCode.Conflict);
+
+    var confirmationWon =
+        confirmResponse.StatusCode == HttpStatusCode.OK;
+
+    // A failed confirmation must leave the order pending.
+    var expectedStatus = confirmationWon ? 1 : 0;
+
+    using var orderResponse = await orderClient.GetAsync(
+        $"/api/orders/{orderId}");
+
+    Assert.Equal(HttpStatusCode.OK, orderResponse.StatusCode);
+
+    var order = await orderResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        expectedStatus,
+        order.GetProperty("status").GetInt32());
+
+    using var productResponse = await inventoryClient.GetAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
+
+    var product = await productResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        1,
+        product.GetProperty("quantityInStock").GetInt32());
+
+    using var historyResponse = await inventoryClient.GetAsync(
+        $"/api/inventory/products/{productId}/history");
+
+    Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+
+    var history = await historyResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    // Only one of the competing operations may record a deduction.
+    Assert.Equal(2, history.GetArrayLength());
+
+    var stockOut = Assert.Single(
+        history.EnumerateArray(),
+        movement => movement.GetProperty("type").GetInt32() == 1);
+
+    Assert.Equal(
+        productId,
+        stockOut.GetProperty("productId").GetInt32());
+
+    Assert.Equal(
+        4,
+        stockOut.GetProperty("quantity").GetInt32());
+
+    var expectedReason = confirmationWon
+        ? $"Order #{orderId} confirmed"
+        : manualReason;
+
+    Assert.Equal(
+        expectedReason,
+        stockOut.GetProperty("reason").GetString());
+
+    var stockIn = Assert.Single(
+        history.EnumerateArray(),
+        movement => movement.GetProperty("type").GetInt32() == 0);
+
+    Assert.Equal(
+        5,
+        stockIn.GetProperty("quantity").GetInt32());
+}
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(
