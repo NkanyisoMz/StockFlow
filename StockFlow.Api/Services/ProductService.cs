@@ -143,17 +143,31 @@ public class ProductService
     }
 
     public async Task<Product?> DeleteAsync(int id)
+{
+    var product = await _db.Products.FindAsync(id);
+
+    if (product is null)
     {
-        var product = await _db.Products.FindAsync(id);
-
-        if (product is null)
-        {
-            return null;
-        }
-
-        _db.Products.Remove(product);
-        await _db.SaveChangesAsync();
-
-        return product;
+        return null;
     }
+
+    _db.Products.Remove(product);
+
+    try
+    {
+        await _db.SaveChangesAsync();
+    }
+    catch (DbUpdateException ex)
+        when (ex.InnerException is PostgresException pgEx
+            && pgEx.SqlState == PostgresErrorCodes.ForeignKeyViolation
+            && (pgEx.ConstraintName ==
+                    "FK_InventoryMovements_Products_ProductId"
+                || pgEx.ConstraintName ==
+                    "FK_OrderItems_Products_ProductId"))
+    {
+        throw new ProductInUseException(id);
+    }
+
+    return product;
+}
 }

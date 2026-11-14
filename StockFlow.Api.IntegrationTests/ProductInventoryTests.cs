@@ -478,6 +478,54 @@ public async Task CreateProduct_WithInvalidPrice_DoesNotPersistProduct(
         results.GetProperty("items").GetArrayLength());
 }
 
+[Fact]
+public async Task DeleteProduct_WithInventoryHistory_ReturnsConflict()
+{
+    using var client = CreateClient();
+
+    // Create a product with stock and an inventory movement.
+    var productId = await TestData.CreateProductAsync(
+        client,
+        price: 100.00m,
+        initialStock: 5);
+
+    using var deleteResponse = await client.DeleteAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(
+        HttpStatusCode.Conflict,
+        deleteResponse.StatusCode);
+
+    // The rejected deletion must preserve the product.
+    using var productResponse = await client.GetAsync(
+        $"/api/products/{productId}");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        productResponse.StatusCode);
+
+    var product = await productResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(
+        5,
+        product.GetProperty("quantityInStock").GetInt32());
+
+    using var historyResponse = await client.GetAsync(
+        $"/api/inventory/products/{productId}/history");
+
+    Assert.Equal(
+        HttpStatusCode.OK,
+        historyResponse.StatusCode);
+
+    var history = await historyResponse.Content
+        .ReadFromJsonAsync<JsonElement>();
+
+    Assert.Equal(1, history.GetArrayLength());
+    Assert.Equal(
+        5,
+        history[0].GetProperty("quantity").GetInt32());
+}
 
 
     private HttpClient CreateClient()

@@ -76,12 +76,23 @@ public class ProductsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    public async Task<ActionResult<Product>> DeleteProduct(int id)
+public async Task<ActionResult<Product>> DeleteProduct(int id)
+{
+    try
     {
         var deletedProduct = await _productService.DeleteAsync(id);
 
-        if (deletedProduct is null) return NotFound($"Product with ID {id} doesn't exist to be deleted.");
+        if (deletedProduct is null)
+        {
+            return NotFound(
+                $"Product with ID {id} doesn't exist to be deleted.");
+        }
 
         return Ok(deletedProduct);
     }
+    catch (ProductInUseException ex)
+    {
+        return Conflict(new { message = ex.Message });
+    }
+}
 }
