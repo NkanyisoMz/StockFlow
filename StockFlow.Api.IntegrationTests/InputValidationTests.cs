@@ -107,6 +107,59 @@ public sealed class InputValidationTests
             history[0].GetProperty("quantity").GetInt32());
     }
 
+    [Theory]
+[InlineData(null, "valid@example.com")]
+[InlineData("", "valid@example.com")]
+[InlineData("Valid Customer", null)]
+[InlineData("Valid Customer", "")]
+[InlineData("Valid Customer", "invalid-email")]
+public async Task CreateCustomer_WithInvalidInput_ReturnsBadRequest(
+    string? name,
+    string? email)
+{
+    using var client = CreateClient();
+
+    using var response = await client.PostAsJsonAsync(
+        "/api/customers",
+        new
+        {
+            name,
+            email
+        });
+
+    Assert.Equal(
+        HttpStatusCode.BadRequest,
+        response.StatusCode);
+}
+
+[Theory]
+[InlineData(101, 20)]
+[InlineData(20, 151)]
+public async Task CreateCustomer_WithFieldExceedingMaximumLength_ReturnsBadRequest(
+    int nameLength,
+    int emailLength)
+{
+    using var client = CreateClient();
+
+    // Construct an email with exactly the requested total length.
+    const string emailSuffix = "@example.com";
+
+    var email = new string('a', emailLength - emailSuffix.Length)
+        + emailSuffix;
+
+    using var response = await client.PostAsJsonAsync(
+        "/api/customers",
+        new
+        {
+            name = new string('N', nameLength),
+            email
+        });
+
+    Assert.Equal(
+        HttpStatusCode.BadRequest,
+        response.StatusCode);
+}
+
     private HttpClient CreateClient()
     {
         return _fixture.Factory.CreateClient(
