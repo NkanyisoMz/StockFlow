@@ -53,6 +53,37 @@ if (args.Contains("--initialize-roles"))
     return;
 }
 
+if (args.Contains("--create-admin"))
+{
+    var email = app.Configuration["BootstrapAdmin:Email"];
+    var password = app.Configuration["BootstrapAdmin:Password"];
+
+    if (string.IsNullOrWhiteSpace(email)
+        || string.IsNullOrWhiteSpace(password))
+    {
+        throw new InvalidOperationException(
+            "Configure BootstrapAdmin:Email and BootstrapAdmin:Password.");
+    }
+
+    await using var scope = app.Services.CreateAsyncScope();
+
+    var roleManager = scope.ServiceProvider
+        .GetRequiredService<RoleManager<IdentityRole>>();
+
+    var userManager = scope.ServiceProvider
+        .GetRequiredService<UserManager<IdentityUser>>();
+
+    await RoleInitializer.InitializeAsync(roleManager);
+
+    await AdminInitializer.InitializeAsync(
+        userManager,
+        email.Trim(),
+        password);
+
+    Console.WriteLine("Administrator created.");
+    return;
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
