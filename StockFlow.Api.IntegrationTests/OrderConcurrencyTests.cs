@@ -35,7 +35,6 @@ public sealed class OrderConcurrencyTests
             customerId,
             (productId, 2));
 
-        // Start both confirmations before awaiting their results.
         var firstRequest = firstClient.PostAsync(
             $"/api/orders/{orderId}/confirm",
             content: null);
@@ -101,7 +100,6 @@ public sealed class OrderConcurrencyTests
         var history = await historyResponse.Content
             .ReadFromJsonAsync<JsonElement>();
 
-        // One initial receipt and exactly one order deduction.
         Assert.Equal(2, history.GetArrayLength());
 
         var stockOut = Assert.Single(
@@ -126,354 +124,349 @@ public sealed class OrderConcurrencyTests
     }
 
     [Fact]
-public async Task ConfirmOrders_WhenStockCannotCoverBoth_OnlyOneConfirms()
-{
-    using var firstClient = CreateClient();
-    using var secondClient = CreateClient();
-
-    var productId = await TestData.CreateProductAsync(
-        firstClient,
-        price: 100.00m,
-        initialStock: 7);
-
-    var customerId = await TestData.CreateCustomerAsync(firstClient);
-
-    var firstOrderId = await TestData.CreateOrderAsync(
-        firstClient,
-        customerId,
-        (productId, 5));
-
-    var secondOrderId = await TestData.CreateOrderAsync(
-        firstClient,
-        customerId,
-        (productId, 5));
-
-    // Different orders compete for the same product balance.
-    var firstRequest = firstClient.PostAsync(
-        $"/api/orders/{firstOrderId}/confirm",
-        content: null);
-
-    var secondRequest = secondClient.PostAsync(
-        $"/api/orders/{secondOrderId}/confirm",
-        content: null);
-
-    var responses = await Task.WhenAll(
-        firstRequest,
-        secondRequest);
-
-    using var firstResponse = responses[0];
-    using var secondResponse = responses[1];
-
-    Assert.Single(
-        responses,
-        response => response.StatusCode == HttpStatusCode.OK);
-
-    Assert.Single(
-        responses,
-        response => response.StatusCode == HttpStatusCode.Conflict);
-
-    var orderIds = new[] { firstOrderId, secondOrderId };
-    var confirmedOrderId = 0;
-
-    for (var index = 0; index < orderIds.Length; index++)
+    public async Task ConfirmOrders_WhenStockCannotCoverBoth_OnlyOneConfirms()
     {
-        using var orderResponse = await firstClient.GetAsync(
-            $"/api/orders/{orderIds[index]}");
+        using var firstClient = CreateClient();
+        using var secondClient = CreateClient();
 
-        Assert.Equal(
-            HttpStatusCode.OK,
-            orderResponse.StatusCode);
+        var productId = await TestData.CreateProductAsync(
+            firstClient,
+            price: 100.00m,
+            initialStock: 7);
 
-        var order = await orderResponse.Content
+        var customerId = await TestData.CreateCustomerAsync(firstClient);
+
+        var firstOrderId = await TestData.CreateOrderAsync(
+            firstClient,
+            customerId,
+            (productId, 5));
+
+        var secondOrderId = await TestData.CreateOrderAsync(
+            firstClient,
+            customerId,
+            (productId, 5));
+
+        var firstRequest = firstClient.PostAsync(
+            $"/api/orders/{firstOrderId}/confirm",
+            content: null);
+
+        var secondRequest = secondClient.PostAsync(
+            $"/api/orders/{secondOrderId}/confirm",
+            content: null);
+
+        var responses = await Task.WhenAll(
+            firstRequest,
+            secondRequest);
+
+        using var firstResponse = responses[0];
+        using var secondResponse = responses[1];
+
+        Assert.Single(
+            responses,
+            response => response.StatusCode == HttpStatusCode.OK);
+
+        Assert.Single(
+            responses,
+            response => response.StatusCode == HttpStatusCode.Conflict);
+
+        var orderIds = new[] { firstOrderId, secondOrderId };
+        var confirmedOrderId = 0;
+
+        for (var index = 0; index < orderIds.Length; index++)
+        {
+            using var orderResponse = await firstClient.GetAsync(
+                $"/api/orders/{orderIds[index]}");
+
+            Assert.Equal(
+                HttpStatusCode.OK,
+                orderResponse.StatusCode);
+
+            var order = await orderResponse.Content
+                .ReadFromJsonAsync<JsonElement>();
+
+            var expectedStatus =
+                responses[index].StatusCode == HttpStatusCode.OK ? 1 : 0;
+
+            Assert.Equal(
+                expectedStatus,
+                order.GetProperty("status").GetInt32());
+
+            if (expectedStatus == 1)
+            {
+                confirmedOrderId = orderIds[index];
+            }
+        }
+
+        using var productResponse = await firstClient.GetAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
+
+        var product = await productResponse.Content
             .ReadFromJsonAsync<JsonElement>();
 
-        // The successful request must match the persisted confirmed order.
-        var expectedStatus =
-            responses[index].StatusCode == HttpStatusCode.OK ? 1 : 0;
-
         Assert.Equal(
-            expectedStatus,
-            order.GetProperty("status").GetInt32());
+            2,
+            product.GetProperty("quantityInStock").GetInt32());
 
-        if (expectedStatus == 1)
-        {
-            confirmedOrderId = orderIds[index];
-        }
-    }
+        using var historyResponse = await firstClient.GetAsync(
+            $"/api/inventory/products/{productId}/history");
 
-    using var productResponse = await firstClient.GetAsync(
-        $"/api/products/{productId}");
+        Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
 
-    Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
+        var history = await historyResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
 
-    var product = await productResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(2, history.GetArrayLength());
 
-    Assert.Equal(
-        2,
-        product.GetProperty("quantityInStock").GetInt32());
-
-    using var historyResponse = await firstClient.GetAsync(
-        $"/api/inventory/products/{productId}/history");
-
-    Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
-
-    var history = await historyResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(2, history.GetArrayLength());
-
-    var stockOut = Assert.Single(
-        history.EnumerateArray(),
-        movement => movement.GetProperty("type").GetInt32() == 1);
-
-    Assert.Equal(
-        5,
-        stockOut.GetProperty("quantity").GetInt32());
-
-    Assert.Equal(
-        $"Order #{confirmedOrderId} confirmed",
-        stockOut.GetProperty("reason").GetString());
-
-    var stockIn = Assert.Single(
-        history.EnumerateArray(),
-        movement => movement.GetProperty("type").GetInt32() == 0);
-
-    Assert.Equal(
-        7,
-        stockIn.GetProperty("quantity").GetInt32());
-}
-
-[Fact]
-public async Task ConfirmAndCancel_WhenRequestsCompete_OnlyOneTransitionSucceeds()
-{
-    using var confirmClient = CreateClient();
-    using var cancelClient = CreateClient();
-
-    var productId = await TestData.CreateProductAsync(
-        confirmClient,
-        price: 100.00m,
-        initialStock: 10);
-
-    var customerId = await TestData.CreateCustomerAsync(confirmClient);
-
-    var orderId = await TestData.CreateOrderAsync(
-        confirmClient,
-        customerId,
-        (productId, 2));
-
-    var confirmRequest = confirmClient.PostAsync(
-        $"/api/orders/{orderId}/confirm",
-        content: null);
-
-    var cancelRequest = cancelClient.PostAsync(
-        $"/api/orders/{orderId}/cancel",
-        content: null);
-
-    var responses = await Task.WhenAll(
-        confirmRequest,
-        cancelRequest);
-
-    using var confirmResponse = responses[0];
-    using var cancelResponse = responses[1];
-
-    Assert.Single(
-        responses,
-        response => response.StatusCode == HttpStatusCode.OK);
-
-    Assert.Single(
-        responses,
-        response => response.StatusCode == HttpStatusCode.Conflict);
-
-    var confirmationWon =
-        confirmResponse.StatusCode == HttpStatusCode.OK;
-
-    // Confirmed = 1; Cancelled = 2.
-    var expectedStatus = confirmationWon ? 1 : 2;
-    var expectedStock = confirmationWon ? 8 : 10;
-    var expectedMovementCount = confirmationWon ? 2 : 1;
-
-    using var orderResponse = await confirmClient.GetAsync(
-        $"/api/orders/{orderId}");
-
-    Assert.Equal(HttpStatusCode.OK, orderResponse.StatusCode);
-
-    var order = await orderResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(
-        expectedStatus,
-        order.GetProperty("status").GetInt32());
-
-    Assert.Equal(
-        200.00m,
-        order.GetProperty("totalAmount").GetDecimal());
-
-    using var productResponse = await confirmClient.GetAsync(
-        $"/api/products/{productId}");
-
-    Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
-
-    var product = await productResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(
-        expectedStock,
-        product.GetProperty("quantityInStock").GetInt32());
-
-    using var historyResponse = await confirmClient.GetAsync(
-        $"/api/inventory/products/{productId}/history");
-
-    Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
-
-    var history = await historyResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(
-        expectedMovementCount,
-        history.GetArrayLength());
-
-    var stockIn = Assert.Single(
-        history.EnumerateArray(),
-        movement => movement.GetProperty("type").GetInt32() == 0);
-
-    Assert.Equal(
-        10,
-        stockIn.GetProperty("quantity").GetInt32());
-
-    if (confirmationWon)
-    {
         var stockOut = Assert.Single(
             history.EnumerateArray(),
             movement => movement.GetProperty("type").GetInt32() == 1);
 
         Assert.Equal(
-            2,
+            5,
             stockOut.GetProperty("quantity").GetInt32());
 
         Assert.Equal(
-            $"Order #{orderId} confirmed",
+            $"Order #{confirmedOrderId} confirmed",
             stockOut.GetProperty("reason").GetString());
+
+        var stockIn = Assert.Single(
+            history.EnumerateArray(),
+            movement => movement.GetProperty("type").GetInt32() == 0);
+
+        Assert.Equal(
+            7,
+            stockIn.GetProperty("quantity").GetInt32());
     }
-}
 
-[Fact]
-public async Task StockOutAndConfirm_WhenRequestsCompete_PreserveInventory()
-{
-    using var inventoryClient = CreateClient();
-    using var orderClient = CreateClient();
+    [Fact]
+    public async Task ConfirmAndCancel_WhenRequestsCompete_OnlyOneTransitionSucceeds()
+    {
+        using var confirmClient = CreateClient();
+        using var cancelClient = CreateClient();
 
-    var productId = await TestData.CreateProductAsync(
-        inventoryClient,
-        price: 100.00m,
-        initialStock: 5);
+        var productId = await TestData.CreateProductAsync(
+            confirmClient,
+            price: 100.00m,
+            initialStock: 10);
 
-    var customerId = await TestData.CreateCustomerAsync(orderClient);
+        var customerId = await TestData.CreateCustomerAsync(confirmClient);
 
-    var orderId = await TestData.CreateOrderAsync(
-        orderClient,
-        customerId,
-        (productId, 4));
+        var orderId = await TestData.CreateOrderAsync(
+            confirmClient,
+            customerId,
+            (productId, 2));
 
-    const string manualReason = "Competing manual stock-out";
+        var confirmRequest = confirmClient.PostAsync(
+            $"/api/orders/{orderId}/confirm",
+            content: null);
 
-    var stockOutRequest = inventoryClient.PostAsJsonAsync(
-        "/api/inventory/stock-out",
-        new
+        var cancelRequest = cancelClient.PostAsync(
+            $"/api/orders/{orderId}/cancel",
+            content: null);
+
+        var responses = await Task.WhenAll(
+            confirmRequest,
+            cancelRequest);
+
+        using var confirmResponse = responses[0];
+        using var cancelResponse = responses[1];
+
+        Assert.Single(
+            responses,
+            response => response.StatusCode == HttpStatusCode.OK);
+
+        Assert.Single(
+            responses,
+            response => response.StatusCode == HttpStatusCode.Conflict);
+
+        var confirmationWon =
+            confirmResponse.StatusCode == HttpStatusCode.OK;
+
+        var expectedStatus = confirmationWon ? 1 : 2;
+        var expectedStock = confirmationWon ? 8 : 10;
+        var expectedMovementCount = confirmationWon ? 2 : 1;
+
+        using var orderResponse = await confirmClient.GetAsync(
+            $"/api/orders/{orderId}");
+
+        Assert.Equal(HttpStatusCode.OK, orderResponse.StatusCode);
+
+        var order = await orderResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            expectedStatus,
+            order.GetProperty("status").GetInt32());
+
+        Assert.Equal(
+            200.00m,
+            order.GetProperty("totalAmount").GetDecimal());
+
+        using var productResponse = await confirmClient.GetAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
+
+        var product = await productResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            expectedStock,
+            product.GetProperty("quantityInStock").GetInt32());
+
+        using var historyResponse = await confirmClient.GetAsync(
+            $"/api/inventory/products/{productId}/history");
+
+        Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+
+        var history = await historyResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            expectedMovementCount,
+            history.GetArrayLength());
+
+        var stockIn = Assert.Single(
+            history.EnumerateArray(),
+            movement => movement.GetProperty("type").GetInt32() == 0);
+
+        Assert.Equal(
+            10,
+            stockIn.GetProperty("quantity").GetInt32());
+
+        if (confirmationWon)
         {
+            var stockOut = Assert.Single(
+                history.EnumerateArray(),
+                movement => movement.GetProperty("type").GetInt32() == 1);
+
+            Assert.Equal(
+                2,
+                stockOut.GetProperty("quantity").GetInt32());
+
+            Assert.Equal(
+                $"Order #{orderId} confirmed",
+                stockOut.GetProperty("reason").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task StockOutAndConfirm_WhenRequestsCompete_PreserveInventory()
+    {
+        using var inventoryClient = CreateClient();
+        using var orderClient = CreateClient();
+
+        var productId = await TestData.CreateProductAsync(
+            inventoryClient,
+            price: 100.00m,
+            initialStock: 5);
+
+        var customerId = await TestData.CreateCustomerAsync(orderClient);
+
+        var orderId = await TestData.CreateOrderAsync(
+            orderClient,
+            customerId,
+            (productId, 4));
+
+        const string manualReason = "Competing manual stock-out";
+
+        var stockOutRequest = inventoryClient.PostAsJsonAsync(
+            "/api/inventory/stock-out",
+            new
+            {
+                productId,
+                quantity = 4,
+                reason = manualReason
+            });
+
+        var confirmRequest = orderClient.PostAsync(
+            $"/api/orders/{orderId}/confirm",
+            content: null);
+
+        var responses = await Task.WhenAll(
+            stockOutRequest,
+            confirmRequest);
+
+        using var stockOutResponse = responses[0];
+        using var confirmResponse = responses[1];
+
+        Assert.Single(
+            responses,
+            response => response.StatusCode == HttpStatusCode.OK);
+
+        Assert.Single(
+            responses,
+            response => response.StatusCode == HttpStatusCode.Conflict);
+
+        var confirmationWon =
+            confirmResponse.StatusCode == HttpStatusCode.OK;
+
+        var expectedStatus = confirmationWon ? 1 : 0;
+
+        using var orderResponse = await orderClient.GetAsync(
+            $"/api/orders/{orderId}");
+
+        Assert.Equal(HttpStatusCode.OK, orderResponse.StatusCode);
+
+        var order = await orderResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            expectedStatus,
+            order.GetProperty("status").GetInt32());
+
+        using var productResponse = await inventoryClient.GetAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
+
+        var product = await productResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            1,
+            product.GetProperty("quantityInStock").GetInt32());
+
+        using var historyResponse = await inventoryClient.GetAsync(
+            $"/api/inventory/products/{productId}/history");
+
+        Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+
+        var history = await historyResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(2, history.GetArrayLength());
+
+        var stockOut = Assert.Single(
+            history.EnumerateArray(),
+            movement => movement.GetProperty("type").GetInt32() == 1);
+
+        Assert.Equal(
             productId,
-            quantity = 4,
-            reason = manualReason
-        });
+            stockOut.GetProperty("productId").GetInt32());
 
-    var confirmRequest = orderClient.PostAsync(
-        $"/api/orders/{orderId}/confirm",
-        content: null);
+        Assert.Equal(
+            4,
+            stockOut.GetProperty("quantity").GetInt32());
 
-    var responses = await Task.WhenAll(
-        stockOutRequest,
-        confirmRequest);
+        var expectedReason = confirmationWon
+            ? $"Order #{orderId} confirmed"
+            : manualReason;
 
-    using var stockOutResponse = responses[0];
-    using var confirmResponse = responses[1];
+        Assert.Equal(
+            expectedReason,
+            stockOut.GetProperty("reason").GetString());
 
-    Assert.Single(
-        responses,
-        response => response.StatusCode == HttpStatusCode.OK);
+        var stockIn = Assert.Single(
+            history.EnumerateArray(),
+            movement => movement.GetProperty("type").GetInt32() == 0);
 
-    Assert.Single(
-        responses,
-        response => response.StatusCode == HttpStatusCode.Conflict);
-
-    var confirmationWon =
-        confirmResponse.StatusCode == HttpStatusCode.OK;
-
-    // A failed confirmation must leave the order pending.
-    var expectedStatus = confirmationWon ? 1 : 0;
-
-    using var orderResponse = await orderClient.GetAsync(
-        $"/api/orders/{orderId}");
-
-    Assert.Equal(HttpStatusCode.OK, orderResponse.StatusCode);
-
-    var order = await orderResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(
-        expectedStatus,
-        order.GetProperty("status").GetInt32());
-
-    using var productResponse = await inventoryClient.GetAsync(
-        $"/api/products/{productId}");
-
-    Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
-
-    var product = await productResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(
-        1,
-        product.GetProperty("quantityInStock").GetInt32());
-
-    using var historyResponse = await inventoryClient.GetAsync(
-        $"/api/inventory/products/{productId}/history");
-
-    Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
-
-    var history = await historyResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    // Only one of the competing operations may record a deduction.
-    Assert.Equal(2, history.GetArrayLength());
-
-    var stockOut = Assert.Single(
-        history.EnumerateArray(),
-        movement => movement.GetProperty("type").GetInt32() == 1);
-
-    Assert.Equal(
-        productId,
-        stockOut.GetProperty("productId").GetInt32());
-
-    Assert.Equal(
-        4,
-        stockOut.GetProperty("quantity").GetInt32());
-
-    var expectedReason = confirmationWon
-        ? $"Order #{orderId} confirmed"
-        : manualReason;
-
-    Assert.Equal(
-        expectedReason,
-        stockOut.GetProperty("reason").GetString());
-
-    var stockIn = Assert.Single(
-        history.EnumerateArray(),
-        movement => movement.GetProperty("type").GetInt32() == 0);
-
-    Assert.Equal(
-        5,
-        stockIn.GetProperty("quantity").GetInt32());
-}
+        Assert.Equal(
+            5,
+            stockIn.GetProperty("quantity").GetInt32());
+    }
 
     private HttpClient CreateClient()
     {

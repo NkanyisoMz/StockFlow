@@ -18,7 +18,6 @@ public sealed class InfrastructureTests
     [Fact]
     public async Task GetProducts_WithMigratedDatabase_ReturnsOk()
     {
-        // Use HTTPS to avoid the application's HTTPS redirect.
         using var client = _fixture.Factory.CreateClient(
             new WebApplicationFactoryClientOptions
             {

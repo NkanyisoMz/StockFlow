@@ -32,7 +32,6 @@ public sealed class OrderQueryTests
 
         var pendingIds = new List<int>();
 
-        // Create three matching orders for the target customer.
         for (var index = 0; index < 3; index++)
         {
             var orderId = await TestData.CreateOrderAsync(
@@ -43,7 +42,6 @@ public sealed class OrderQueryTests
             pendingIds.Add(orderId);
         }
 
-        // Same customer, different status: this order must be excluded.
         var cancelledOrderId = await TestData.CreateOrderAsync(
             client,
             customerId,
@@ -55,13 +53,11 @@ public sealed class OrderQueryTests
 
         Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
 
-        // Same status, different customer: this order must also be excluded.
         await TestData.CreateOrderAsync(
             client,
             otherCustomerId,
             (productId, 1));
 
-        // Sequential creation produces newest-first order in reverse ID order.
         pendingIds.Reverse();
 
         var expectedPages = new[]
@@ -131,29 +127,29 @@ public sealed class OrderQueryTests
     }
 
     [Theory]
-[InlineData("page=0")]
-[InlineData("page=-1")]
-[InlineData("pageSize=0")]
-[InlineData("pageSize=101")]
-[InlineData("customerId=0")]
-[InlineData("customerId=-1")]
-[InlineData("page=abc")]
-[InlineData("customerId=abc")]
-[InlineData("status=unknown")]
-[InlineData("status=999")]
-[InlineData("status=-1")]
-public async Task GetOrders_WithInvalidQuery_ReturnsBadRequest(
-    string query)
-{
-    using var client = CreateClient();
+    [InlineData("page=0")]
+    [InlineData("page=-1")]
+    [InlineData("pageSize=0")]
+    [InlineData("pageSize=101")]
+    [InlineData("customerId=0")]
+    [InlineData("customerId=-1")]
+    [InlineData("page=abc")]
+    [InlineData("customerId=abc")]
+    [InlineData("status=unknown")]
+    [InlineData("status=999")]
+    [InlineData("status=-1")]
+    public async Task GetOrders_WithInvalidQuery_ReturnsBadRequest(
+        string query)
+    {
+        using var client = CreateClient();
 
-    using var response = await client.GetAsync(
-        $"/api/orders?{query}");
+        using var response = await client.GetAsync(
+            $"/api/orders?{query}");
 
-    Assert.Equal(
-        HttpStatusCode.BadRequest,
-        response.StatusCode);
-}
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            response.StatusCode);
+    }
 
     private HttpClient CreateClient()
     {

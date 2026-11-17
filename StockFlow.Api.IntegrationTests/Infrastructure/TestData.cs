@@ -28,7 +28,6 @@ internal static class TestData
 
         var productId = product.GetProperty("id").GetInt32();
 
-        // Initial stock must enter through the inventory API.
         if (initialStock > 0)
         {
             using var stockResponse = await client.PostAsJsonAsync(

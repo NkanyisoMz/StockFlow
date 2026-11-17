@@ -16,7 +16,6 @@ public sealed class StockFlowApiFactory : WebApplicationFactory<Program>
 
     protected override IHost CreateHost(IHostBuilder builder)
     {
-        // Provide the test database connection before Program reads it.
         builder.ConfigureHostConfiguration(configuration =>
         {
             configuration.AddInMemoryCollection(

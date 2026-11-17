@@ -28,7 +28,6 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
         var db = scope.ServiceProvider
             .GetRequiredService<StockFlowDbContext>();
 
-        // Apply real migrations so tests use the application's database schema.
         await db.Database.MigrateAsync();
     }
 
@@ -43,7 +42,6 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
         }
         finally
         {
-            // Release the container even if application cleanup fails.
             await _database.DisposeAsync();
         }
     }

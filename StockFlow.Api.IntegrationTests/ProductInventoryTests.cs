@@ -47,7 +47,6 @@ public sealed class ProductInventoryTests
             0,
             created.GetProperty("quantityInStock").GetInt32());
 
-        // A separate request verifies the product was persisted.
         using var getResponse = await client.GetAsync(
             $"/api/products/{productId}");
 
@@ -117,7 +116,6 @@ public sealed class ProductInventoryTests
 
         Assert.Equal(10, movement.GetProperty("quantity").GetInt32());
 
-        // StockIn is represented as 0 in the current HTTP contract.
         Assert.Equal(0, movement.GetProperty("type").GetInt32());
 
         using var productResponse = await client.GetAsync(
@@ -144,7 +142,6 @@ public sealed class ProductInventoryTests
         var history = await historyResponse.Content
             .ReadFromJsonAsync<JsonElement>();
 
-        // This newly created product should have exactly one movement.
         Assert.Equal(1, history.GetArrayLength());
 
         var savedMovement = history[0];
@@ -171,507 +168,494 @@ public sealed class ProductInventoryTests
     }
 
     [Fact]
-public async Task StockOut_WhenQuantityExceedsBalance_PreservesInventory()
-{
-    using var client = CreateClient();
+    public async Task StockOut_WhenQuantityExceedsBalance_PreservesInventory()
+    {
+        using var client = CreateClient();
 
-    // Arrange: create an independent product and receive five units.
-    using var createResponse = await client.PostAsJsonAsync(
-        "/api/products",
-        new
-        {
-            name = "Insufficient Stock Test Product",
-            sku = $"TEST-{Guid.NewGuid():N}",
-            price = 100.00m
-        });
+        using var createResponse = await client.PostAsJsonAsync(
+            "/api/products",
+            new
+            {
+                name = "Insufficient Stock Test Product",
+                sku = $"TEST-{Guid.NewGuid():N}",
+                price = 100.00m
+            });
 
-    Assert.Equal(
-        HttpStatusCode.Created,
-        createResponse.StatusCode);
+        Assert.Equal(
+            HttpStatusCode.Created,
+            createResponse.StatusCode);
 
-    var created = await createResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
+        var created = await createResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
 
-    var productId = created.GetProperty("id").GetInt32();
+        var productId = created.GetProperty("id").GetInt32();
 
-    using var stockInResponse = await client.PostAsJsonAsync(
-        "/api/inventory/stock-in",
-        new
-        {
+        using var stockInResponse = await client.PostAsJsonAsync(
+            "/api/inventory/stock-in",
+            new
+            {
+                productId,
+                quantity = 5,
+                reason = "Initial test stock"
+            });
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            stockInResponse.StatusCode);
+
+        var initialMovement = await stockInResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        var initialMovementId = initialMovement
+            .GetProperty("id")
+            .GetInt32();
+
+        using var stockOutResponse = await client.PostAsJsonAsync(
+            "/api/inventory/stock-out",
+            new
+            {
+                productId,
+                quantity = 6,
+                reason = "Request exceeds available stock"
+            });
+
+        Assert.Equal(
+            HttpStatusCode.Conflict,
+            stockOutResponse.StatusCode);
+
+        using var productResponse = await client.GetAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            productResponse.StatusCode);
+
+        var product = await productResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            5,
+            product.GetProperty("quantityInStock").GetInt32());
+
+        using var historyResponse = await client.GetAsync(
+            $"/api/inventory/products/{productId}/history");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            historyResponse.StatusCode);
+
+        var history = await historyResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(1, history.GetArrayLength());
+
+        var savedMovement = history[0];
+
+        Assert.Equal(
+            initialMovementId,
+            savedMovement.GetProperty("id").GetInt32());
+
+        Assert.Equal(
+            0,
+            savedMovement.GetProperty("type").GetInt32());
+
+        Assert.Equal(
+            5,
+            savedMovement.GetProperty("quantity").GetInt32());
+    }
+
+    [Fact]
+    public async Task StockIn_WhenMaximumWouldBeExceeded_PreservesInventory()
+    {
+        using var client = CreateClient();
+
+        using var createResponse = await client.PostAsJsonAsync(
+            "/api/products",
+            new
+            {
+                name = "Maximum Stock Test Product",
+                sku = $"TEST-{Guid.NewGuid():N}",
+                price = 50.00m
+            });
+
+        Assert.Equal(
+            HttpStatusCode.Created,
+            createResponse.StatusCode);
+
+        var created = await createResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        var productId = created.GetProperty("id").GetInt32();
+
+        using var initialStockResponse = await client.PostAsJsonAsync(
+            "/api/inventory/stock-in",
+            new
+            {
+                productId,
+                quantity = 100_000,
+                reason = "Fill to maximum capacity"
+            });
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            initialStockResponse.StatusCode);
+
+        var initialMovement = await initialStockResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        var initialMovementId = initialMovement
+            .GetProperty("id")
+            .GetInt32();
+
+        using var excessStockResponse = await client.PostAsJsonAsync(
+            "/api/inventory/stock-in",
+            new
+            {
+                productId,
+                quantity = 1,
+                reason = "Exceeds maximum capacity"
+            });
+
+        Assert.Equal(
+            HttpStatusCode.Conflict,
+            excessStockResponse.StatusCode);
+
+        using var productResponse = await client.GetAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            productResponse.StatusCode);
+
+        var product = await productResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            100_000,
+            product.GetProperty("quantityInStock").GetInt32());
+
+        using var historyResponse = await client.GetAsync(
+            $"/api/inventory/products/{productId}/history");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            historyResponse.StatusCode);
+
+        var history = await historyResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(1, history.GetArrayLength());
+
+        var savedMovement = history[0];
+
+        Assert.Equal(
+            initialMovementId,
+            savedMovement.GetProperty("id").GetInt32());
+
+        Assert.Equal(
+            0,
+            savedMovement.GetProperty("type").GetInt32());
+
+        Assert.Equal(
+            100_000,
+            savedMovement.GetProperty("quantity").GetInt32());
+    }
+
+    [Fact]
+    public async Task CreateProduct_WithDuplicateSku_PreservesOriginalProduct()
+    {
+        using var client = CreateClient();
+
+        var sku = $"TEST-{Guid.NewGuid():N}";
+
+        using var originalResponse = await client.PostAsJsonAsync(
+            "/api/products",
+            new
+            {
+                name = "Original Product",
+                sku,
+                price = 100.00m
+            });
+
+        Assert.Equal(
+            HttpStatusCode.Created,
+            originalResponse.StatusCode);
+
+        var original = await originalResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        var productId = original.GetProperty("id").GetInt32();
+
+        using var duplicateResponse = await client.PostAsJsonAsync(
+            "/api/products",
+            new
+            {
+                name = "Duplicate Product",
+                sku,
+                price = 999.00m
+            });
+
+        Assert.Equal(
+            HttpStatusCode.Conflict,
+            duplicateResponse.StatusCode);
+
+        using var savedResponse = await client.GetAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(HttpStatusCode.OK, savedResponse.StatusCode);
+
+        var saved = await savedResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            "Original Product",
+            saved.GetProperty("name").GetString());
+
+        Assert.Equal(sku, saved.GetProperty("sku").GetString());
+
+        Assert.Equal(
+            100.00m,
+            saved.GetProperty("price").GetDecimal());
+
+    }
+
+    [Theory]
+    [InlineData("-0.01")]
+    [InlineData("1.001")]
+    [InlineData("10000000000000000.00")]
+    public async Task CreateProduct_WithInvalidPrice_DoesNotPersistProduct(
+        string priceText)
+    {
+        using var client = CreateClient();
+
+        var uniqueName = $"InvalidPrice-{Guid.NewGuid():N}";
+
+        var price = decimal.Parse(
+            priceText,
+            System.Globalization.CultureInfo.InvariantCulture);
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/products",
+            new
+            {
+                name = uniqueName,
+                sku = $"TEST-{Guid.NewGuid():N}",
+                price
+            });
+
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            response.StatusCode);
+
+        using var searchResponse = await client.GetAsync(
+            $"/api/products?search={Uri.EscapeDataString(uniqueName)}");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            searchResponse.StatusCode);
+
+        var results = await searchResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            0,
+            results.GetProperty("totalCount").GetInt32());
+
+        Assert.Equal(
+            0,
+            results.GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task DeleteProduct_WithInventoryHistory_ReturnsConflict()
+    {
+        using var client = CreateClient();
+
+        var productId = await TestData.CreateProductAsync(
+            client,
+            price: 100.00m,
+            initialStock: 5);
+
+        using var deleteResponse = await client.DeleteAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(
+            HttpStatusCode.Conflict,
+            deleteResponse.StatusCode);
+
+        using var productResponse = await client.GetAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            productResponse.StatusCode);
+
+        var product = await productResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            5,
+            product.GetProperty("quantityInStock").GetInt32());
+
+        using var historyResponse = await client.GetAsync(
+            $"/api/inventory/products/{productId}/history");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            historyResponse.StatusCode);
+
+        var history = await historyResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(1, history.GetArrayLength());
+        Assert.Equal(
+            5,
+            history[0].GetProperty("quantity").GetInt32());
+    }
+
+    [Fact]
+    public async Task UpdateProduct_WithValidInput_PreservesStock()
+    {
+        using var client = CreateClient();
+
+        var productId = await TestData.CreateProductAsync(
+            client,
+            price: 100.00m,
+            initialStock: 5);
+
+        var updatedSku = $"UPDATED-{Guid.NewGuid():N}";
+
+        using var updateResponse = await client.PutAsJsonAsync(
+            $"/api/products/{productId}",
+            new
+            {
+                name = "Updated Product",
+                sku = updatedSku,
+                price = 175.50m
+            });
+
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            updateResponse.StatusCode);
+
+        using var productResponse = await client.GetAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
+
+        var product = await productResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            "Updated Product",
+            product.GetProperty("name").GetString());
+
+        Assert.Equal(
+            updatedSku,
+            product.GetProperty("sku").GetString());
+
+        Assert.Equal(
+            175.50m,
+            product.GetProperty("price").GetDecimal());
+
+        Assert.Equal(
+            5,
+            product.GetProperty("quantityInStock").GetInt32());
+
+        using var historyResponse = await client.GetAsync(
+            $"/api/inventory/products/{productId}/history");
+
+        Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+
+        var history = await historyResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(1, history.GetArrayLength());
+        Assert.Equal(0, history[0].GetProperty("type").GetInt32());
+        Assert.Equal(5, history[0].GetProperty("quantity").GetInt32());
+    }
+
+    [Fact]
+    public async Task DeleteProduct_WithoutReferences_RemovesProduct()
+    {
+        using var client = CreateClient();
+
+        var productId = await TestData.CreateProductAsync(
+            client,
+            price: 100.00m,
+            initialStock: 0);
+
+        using var deleteResponse = await client.DeleteAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            deleteResponse.StatusCode);
+
+        using var productResponse = await client.GetAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            productResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteProduct_WithOrderItems_ReturnsConflict()
+    {
+        using var client = CreateClient();
+
+        var productId = await TestData.CreateProductAsync(
+            client,
+            price: 100.00m,
+            initialStock: 0);
+
+        var customerId = await TestData.CreateCustomerAsync(client);
+
+        var orderId = await TestData.CreateOrderAsync(
+            client,
+            customerId,
+            (productId, 2));
+
+        using var deleteResponse = await client.DeleteAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(
+            HttpStatusCode.Conflict,
+            deleteResponse.StatusCode);
+
+        using var productResponse = await client.GetAsync(
+            $"/api/products/{productId}");
+
+        Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
+
+        var product = await productResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            0,
+            product.GetProperty("quantityInStock").GetInt32());
+
+        using var orderResponse = await client.GetAsync(
+            $"/api/orders/{orderId}");
+
+        Assert.Equal(HttpStatusCode.OK, orderResponse.StatusCode);
+
+        var order = await orderResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(0, order.GetProperty("status").GetInt32());
+
+        var items = order.GetProperty("items");
+
+        Assert.Equal(1, items.GetArrayLength());
+        Assert.Equal(
             productId,
-            quantity = 5,
-            reason = "Initial test stock"
-        });
-
-    Assert.Equal(
-        HttpStatusCode.OK,
-        stockInResponse.StatusCode);
-
-    var initialMovement = await stockInResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    var initialMovementId = initialMovement
-        .GetProperty("id")
-        .GetInt32();
-
-    // Act: request more stock than is available.
-    using var stockOutResponse = await client.PostAsJsonAsync(
-        "/api/inventory/stock-out",
-        new
-        {
-            productId,
-            quantity = 6,
-            reason = "Request exceeds available stock"
-        });
-
-    Assert.Equal(
-        HttpStatusCode.Conflict,
-        stockOutResponse.StatusCode);
-
-    // Assert: the rejected request did not change the saved balance.
-    using var productResponse = await client.GetAsync(
-        $"/api/products/{productId}");
-
-    Assert.Equal(
-        HttpStatusCode.OK,
-        productResponse.StatusCode);
-
-    var product = await productResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(
-        5,
-        product.GetProperty("quantityInStock").GetInt32());
-
-    using var historyResponse = await client.GetAsync(
-        $"/api/inventory/products/{productId}/history");
-
-    Assert.Equal(
-        HttpStatusCode.OK,
-        historyResponse.StatusCode);
-
-    var history = await historyResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    // Only the original stock-in movement should remain.
-    Assert.Equal(1, history.GetArrayLength());
-
-    var savedMovement = history[0];
-
-    Assert.Equal(
-        initialMovementId,
-        savedMovement.GetProperty("id").GetInt32());
-
-    Assert.Equal(
-        0,
-        savedMovement.GetProperty("type").GetInt32());
-
-    Assert.Equal(
-        5,
-        savedMovement.GetProperty("quantity").GetInt32());
-}
-
-[Fact]
-public async Task StockIn_WhenMaximumWouldBeExceeded_PreservesInventory()
-{
-    using var client = CreateClient();
-
-    // Arrange: create a product and fill it to the allowed maximum.
-    using var createResponse = await client.PostAsJsonAsync(
-        "/api/products",
-        new
-        {
-            name = "Maximum Stock Test Product",
-            sku = $"TEST-{Guid.NewGuid():N}",
-            price = 50.00m
-        });
-
-    Assert.Equal(
-        HttpStatusCode.Created,
-        createResponse.StatusCode);
-
-    var created = await createResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    var productId = created.GetProperty("id").GetInt32();
-
-    using var initialStockResponse = await client.PostAsJsonAsync(
-        "/api/inventory/stock-in",
-        new
-        {
-            productId,
-            quantity = 100_000,
-            reason = "Fill to maximum capacity"
-        });
-
-    Assert.Equal(
-        HttpStatusCode.OK,
-        initialStockResponse.StatusCode);
-
-    var initialMovement = await initialStockResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    var initialMovementId = initialMovement
-        .GetProperty("id")
-        .GetInt32();
-
-    // Act: attempt to exceed the maximum by one unit.
-    using var excessStockResponse = await client.PostAsJsonAsync(
-        "/api/inventory/stock-in",
-        new
-        {
-            productId,
-            quantity = 1,
-            reason = "Exceeds maximum capacity"
-        });
-
-    Assert.Equal(
-        HttpStatusCode.Conflict,
-        excessStockResponse.StatusCode);
-
-    // Assert: the balance remains at the maximum.
-    using var productResponse = await client.GetAsync(
-        $"/api/products/{productId}");
-
-    Assert.Equal(
-        HttpStatusCode.OK,
-        productResponse.StatusCode);
-
-    var product = await productResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(
-        100_000,
-        product.GetProperty("quantityInStock").GetInt32());
-
-    using var historyResponse = await client.GetAsync(
-        $"/api/inventory/products/{productId}/history");
-
-    Assert.Equal(
-        HttpStatusCode.OK,
-        historyResponse.StatusCode);
-
-    var history = await historyResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    // The rejected request must not create another movement.
-    Assert.Equal(1, history.GetArrayLength());
-
-    var savedMovement = history[0];
-
-    Assert.Equal(
-        initialMovementId,
-        savedMovement.GetProperty("id").GetInt32());
-
-    Assert.Equal(
-        0,
-        savedMovement.GetProperty("type").GetInt32());
-
-    Assert.Equal(
-        100_000,
-        savedMovement.GetProperty("quantity").GetInt32());
-}
-
-[Fact]
-public async Task CreateProduct_WithDuplicateSku_PreservesOriginalProduct()
-{
-    using var client = CreateClient();
-
-    var sku = $"TEST-{Guid.NewGuid():N}";
-
-    using var originalResponse = await client.PostAsJsonAsync(
-        "/api/products",
-        new
-        {
-            name = "Original Product",
-            sku,
-            price = 100.00m
-        });
-
-    Assert.Equal(
-        HttpStatusCode.Created,
-        originalResponse.StatusCode);
-
-    var original = await originalResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    var productId = original.GetProperty("id").GetInt32();
-
-    using var duplicateResponse = await client.PostAsJsonAsync(
-        "/api/products",
-        new
-        {
-            name = "Duplicate Product",
-            sku,
-            price = 999.00m
-        });
-
-    Assert.Equal(
-        HttpStatusCode.Conflict,
-        duplicateResponse.StatusCode);
-
-    using var savedResponse = await client.GetAsync(
-        $"/api/products/{productId}");
-
-    Assert.Equal(HttpStatusCode.OK, savedResponse.StatusCode);
-
-    var saved = await savedResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(
-        "Original Product",
-        saved.GetProperty("name").GetString());
-
-    Assert.Equal(sku, saved.GetProperty("sku").GetString());
-
-    Assert.Equal(
-        100.00m,
-        saved.GetProperty("price").GetDecimal());
-
-}
-
-[Theory]
-[InlineData("-0.01")]
-[InlineData("1.001")]
-[InlineData("10000000000000000.00")]
-public async Task CreateProduct_WithInvalidPrice_DoesNotPersistProduct(
-    string priceText)
-{
-    using var client = CreateClient();
-
-    var uniqueName = $"InvalidPrice-{Guid.NewGuid():N}";
-
-    // Strings in InlineData preserve exact decimal values.
-    var price = decimal.Parse(
-        priceText,
-        System.Globalization.CultureInfo.InvariantCulture);
-
-    using var response = await client.PostAsJsonAsync(
-        "/api/products",
-        new
-        {
-            name = uniqueName,
-            sku = $"TEST-{Guid.NewGuid():N}",
-            price
-        });
-
-    Assert.Equal(
-        HttpStatusCode.BadRequest,
-        response.StatusCode);
-
-    using var searchResponse = await client.GetAsync(
-        $"/api/products?search={Uri.EscapeDataString(uniqueName)}");
-
-    Assert.Equal(
-        HttpStatusCode.OK,
-        searchResponse.StatusCode);
-
-    var results = await searchResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(
-        0,
-        results.GetProperty("totalCount").GetInt32());
-
-    Assert.Equal(
-        0,
-        results.GetProperty("items").GetArrayLength());
-}
-
-[Fact]
-public async Task DeleteProduct_WithInventoryHistory_ReturnsConflict()
-{
-    using var client = CreateClient();
-
-    // Create a product with stock and an inventory movement.
-    var productId = await TestData.CreateProductAsync(
-        client,
-        price: 100.00m,
-        initialStock: 5);
-
-    using var deleteResponse = await client.DeleteAsync(
-        $"/api/products/{productId}");
-
-    Assert.Equal(
-        HttpStatusCode.Conflict,
-        deleteResponse.StatusCode);
-
-    // The rejected deletion must preserve the product.
-    using var productResponse = await client.GetAsync(
-        $"/api/products/{productId}");
-
-    Assert.Equal(
-        HttpStatusCode.OK,
-        productResponse.StatusCode);
-
-    var product = await productResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(
-        5,
-        product.GetProperty("quantityInStock").GetInt32());
-
-    using var historyResponse = await client.GetAsync(
-        $"/api/inventory/products/{productId}/history");
-
-    Assert.Equal(
-        HttpStatusCode.OK,
-        historyResponse.StatusCode);
-
-    var history = await historyResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(1, history.GetArrayLength());
-    Assert.Equal(
-        5,
-        history[0].GetProperty("quantity").GetInt32());
-}
-
-[Fact]
-public async Task UpdateProduct_WithValidInput_PreservesStock()
-{
-    using var client = CreateClient();
-
-    var productId = await TestData.CreateProductAsync(
-        client,
-        price: 100.00m,
-        initialStock: 5);
-
-    var updatedSku = $"UPDATED-{Guid.NewGuid():N}";
-
-    using var updateResponse = await client.PutAsJsonAsync(
-        $"/api/products/{productId}",
-        new
-        {
-            name = "Updated Product",
-            sku = updatedSku,
-            price = 175.50m
-        });
-
-    Assert.Equal(
-        HttpStatusCode.NoContent,
-        updateResponse.StatusCode);
-
-    using var productResponse = await client.GetAsync(
-        $"/api/products/{productId}");
-
-    Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
-
-    var product = await productResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(
-        "Updated Product",
-        product.GetProperty("name").GetString());
-
-    Assert.Equal(
-        updatedSku,
-        product.GetProperty("sku").GetString());
-
-    Assert.Equal(
-        175.50m,
-        product.GetProperty("price").GetDecimal());
-
-    Assert.Equal(
-        5,
-        product.GetProperty("quantityInStock").GetInt32());
-
-    using var historyResponse = await client.GetAsync(
-        $"/api/inventory/products/{productId}/history");
-
-    Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
-
-    var history = await historyResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(1, history.GetArrayLength());
-    Assert.Equal(0, history[0].GetProperty("type").GetInt32());
-    Assert.Equal(5, history[0].GetProperty("quantity").GetInt32());
-}
-
-[Fact]
-public async Task DeleteProduct_WithoutReferences_RemovesProduct()
-{
-    using var client = CreateClient();
-
-    // Zero initial stock means the helper creates no inventory movement.
-    var productId = await TestData.CreateProductAsync(
-        client,
-        price: 100.00m,
-        initialStock: 0);
-
-    using var deleteResponse = await client.DeleteAsync(
-        $"/api/products/{productId}");
-
-    Assert.Equal(
-        HttpStatusCode.OK,
-        deleteResponse.StatusCode);
-
-    using var productResponse = await client.GetAsync(
-        $"/api/products/{productId}");
-
-    Assert.Equal(
-        HttpStatusCode.NotFound,
-        productResponse.StatusCode);
-}
-
-[Fact]
-public async Task DeleteProduct_WithOrderItems_ReturnsConflict()
-{
-    using var client = CreateClient();
-
-    // No inventory history: the order item is the reference blocking deletion.
-    var productId = await TestData.CreateProductAsync(
-        client,
-        price: 100.00m,
-        initialStock: 0);
-
-    var customerId = await TestData.CreateCustomerAsync(client);
-
-    var orderId = await TestData.CreateOrderAsync(
-        client,
-        customerId,
-        (productId, 2));
-
-    using var deleteResponse = await client.DeleteAsync(
-        $"/api/products/{productId}");
-
-    Assert.Equal(
-        HttpStatusCode.Conflict,
-        deleteResponse.StatusCode);
-
-    using var productResponse = await client.GetAsync(
-        $"/api/products/{productId}");
-
-    Assert.Equal(HttpStatusCode.OK, productResponse.StatusCode);
-
-    var product = await productResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(
-        0,
-        product.GetProperty("quantityInStock").GetInt32());
-
-    using var orderResponse = await client.GetAsync(
-        $"/api/orders/{orderId}");
-
-    Assert.Equal(HttpStatusCode.OK, orderResponse.StatusCode);
-
-    var order = await orderResponse.Content
-        .ReadFromJsonAsync<JsonElement>();
-
-    Assert.Equal(0, order.GetProperty("status").GetInt32());
-
-    var items = order.GetProperty("items");
-
-    Assert.Equal(1, items.GetArrayLength());
-    Assert.Equal(
-        productId,
-        items[0].GetProperty("productId").GetInt32());
-    Assert.Equal(
-        2,
-        items[0].GetProperty("quantity").GetInt32());
-}
+            items[0].GetProperty("productId").GetInt32());
+        Assert.Equal(
+            2,
+            items[0].GetProperty("quantity").GetInt32());
+    }
 
     private HttpClient CreateClient()
     {

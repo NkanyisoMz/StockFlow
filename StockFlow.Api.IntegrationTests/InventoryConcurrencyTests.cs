@@ -28,7 +28,6 @@ public sealed class InventoryConcurrencyTests
             price: 100.00m,
             initialStock: 5);
 
-        // Start both requests before awaiting either result.
         var firstRequest = firstClient.PostAsJsonAsync(
             "/api/inventory/stock-out",
             new
@@ -54,7 +53,6 @@ public sealed class InventoryConcurrencyTests
         using var firstResponse = responses[0];
         using var secondResponse = responses[1];
 
-        // Either request may win; the required outcome is the same.
         Assert.Single(
             responses,
             response => response.StatusCode == HttpStatusCode.OK);
@@ -87,7 +85,6 @@ public sealed class InventoryConcurrencyTests
         var history = await historyResponse.Content
             .ReadFromJsonAsync<JsonElement>();
 
-        // One initial receipt and one successful deduction.
         Assert.Equal(2, history.GetArrayLength());
 
         var stockOut = Assert.Single(

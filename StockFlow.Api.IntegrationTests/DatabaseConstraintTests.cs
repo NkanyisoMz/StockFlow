@@ -28,7 +28,6 @@ public sealed class DatabaseConstraintTests
         var db = scope.ServiceProvider
             .GetRequiredService<StockFlowDbContext>();
 
-        // Bypass the API to verify PostgreSQL enforces the stock range.
         db.Products.Add(new Product
         {
             Name = "Constraint Test Product",
@@ -53,90 +52,88 @@ public sealed class DatabaseConstraintTests
     }
 
     [Fact]
-public async Task SaveProduct_WithDuplicateSku_DatabaseRejectsWrite()
-{
-    await using var scope = _fixture.Factory.Services
-        .CreateAsyncScope();
-
-    var db = scope.ServiceProvider
-        .GetRequiredService<StockFlowDbContext>();
-
-    var sku = $"TEST-{Guid.NewGuid():N}";
-
-    db.Products.Add(new Product
+    public async Task SaveProduct_WithDuplicateSku_DatabaseRejectsWrite()
     {
-        Name = "Original Product",
-        Sku = sku,
-        Price = 100.00m,
-        QuantityInStock = 0
-    });
+        await using var scope = _fixture.Factory.Services
+            .CreateAsyncScope();
 
-    await db.SaveChangesAsync();
+        var db = scope.ServiceProvider
+            .GetRequiredService<StockFlowDbContext>();
 
-    // Bypass the service's uniqueness check.
-    db.Products.Add(new Product
-    {
-        Name = "Duplicate Product",
-        Sku = sku,
-        Price = 200.00m,
-        QuantityInStock = 0
-    });
+        var sku = $"TEST-{Guid.NewGuid():N}";
 
-    var exception = await Assert.ThrowsAsync<DbUpdateException>(
-        () => db.SaveChangesAsync());
-
-    var postgresException = Assert.IsType<PostgresException>(
-        exception.InnerException);
-
-    Assert.Equal(
-        PostgresErrorCodes.UniqueViolation,
-        postgresException.SqlState);
-
-    Assert.Equal(
-        "IX_Products_Sku",
-        postgresException.ConstraintName);
-}
-
-[Fact]
-public async Task DeleteProduct_WithInventoryHistory_DatabaseRejectsWrite()
-{
-    // Create valid data through the API before bypassing the service.
-    using var client = _fixture.Factory.CreateClient(
-        new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        db.Products.Add(new Product
         {
-            BaseAddress = new Uri("https://localhost"),
-            AllowAutoRedirect = false
+            Name = "Original Product",
+            Sku = sku,
+            Price = 100.00m,
+            QuantityInStock = 0
         });
 
-    var productId = await TestData.CreateProductAsync(
-        client,
-        price: 100.00m,
-        initialStock: 5);
+        await db.SaveChangesAsync();
 
-    await using var scope = _fixture.Factory.Services
-        .CreateAsyncScope();
+        // Bypass the service's uniqueness check.
+        db.Products.Add(new Product
+        {
+            Name = "Duplicate Product",
+            Sku = sku,
+            Price = 200.00m,
+            QuantityInStock = 0
+        });
 
-    var db = scope.ServiceProvider
-        .GetRequiredService<StockFlowDbContext>();
+        var exception = await Assert.ThrowsAsync<DbUpdateException>(
+            () => db.SaveChangesAsync());
 
-    var product = await db.Products.SingleAsync(
-        product => product.Id == productId);
+        var postgresException = Assert.IsType<PostgresException>(
+            exception.InnerException);
 
-    // Bypass the service's exception translation.
-    db.Products.Remove(product);
+        Assert.Equal(
+            PostgresErrorCodes.UniqueViolation,
+            postgresException.SqlState);
 
-    var exception = await Assert.ThrowsAsync<DbUpdateException>(
-        () => db.SaveChangesAsync());
+        Assert.Equal(
+            "IX_Products_Sku",
+            postgresException.ConstraintName);
+    }
 
-    var postgresException = Assert.IsType<PostgresException>(
-        exception.InnerException);
+    [Fact]
+    public async Task DeleteProduct_WithInventoryHistory_DatabaseRejectsWrite()
+    {
+        using var client = _fixture.Factory.CreateClient(
+            new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+            {
+                BaseAddress = new Uri("https://localhost"),
+                AllowAutoRedirect = false
+            });
 
-    Assert.Equal(
-        PostgresErrorCodes.ForeignKeyViolation,
-        postgresException.SqlState);
+        var productId = await TestData.CreateProductAsync(
+            client,
+            price: 100.00m,
+            initialStock: 5);
 
-    Assert.Equal(
-        "FK_InventoryMovements_Products_ProductId",
-        postgresException.ConstraintName);
-}
+        await using var scope = _fixture.Factory.Services
+            .CreateAsyncScope();
+
+        var db = scope.ServiceProvider
+            .GetRequiredService<StockFlowDbContext>();
+
+        var product = await db.Products.SingleAsync(
+            product => product.Id == productId);
+
+        db.Products.Remove(product);
+
+        var exception = await Assert.ThrowsAsync<DbUpdateException>(
+            () => db.SaveChangesAsync());
+
+        var postgresException = Assert.IsType<PostgresException>(
+            exception.InnerException);
+
+        Assert.Equal(
+            PostgresErrorCodes.ForeignKeyViolation,
+            postgresException.SqlState);
+
+        Assert.Equal(
+            "FK_InventoryMovements_Products_ProductId",
+            postgresException.ConstraintName);
+    }
 }
