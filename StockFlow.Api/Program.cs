@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using StockFlow.Api.Security;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,6 +40,57 @@ builder.Services.AddScoped<InventoryService>();
 builder.Services.AddScoped<CustomerService>();
 
 builder.Services.AddScoped<OrderService>();
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        var issuer = builder.Configuration["Jwt:Issuer"]
+            ?? throw new InvalidOperationException(
+                "Jwt:Issuer is required.");
+
+        var audience = builder.Configuration["Jwt:Audience"]
+            ?? throw new InvalidOperationException(
+                "Jwt:Audience is required.");
+
+        var key = builder.Configuration["Jwt:Key"]
+            ?? throw new InvalidOperationException(
+                "Jwt:Key is required.");
+
+        if (Encoding.UTF8.GetByteCount(key) < 32)
+        {
+            throw new InvalidOperationException(
+                "Jwt:Key must contain at least 32 bytes.");
+        }
+
+        options.MapInboundClaims = false;
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = issuer,
+
+            ValidateAudience = true,
+            ValidAudience = audience,
+
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(key)),
+
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            RequireSignedTokens = true,
+
+            ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 },
+
+            NameClaimType = "sub",
+            RoleClaimType = "role",
+
+            ClockSkew = TimeSpan.FromSeconds(30)
+        };
+    });
+
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
@@ -91,6 +145,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseAuthentication();
+
+app.UseAuthorization();
 
 app.MapControllers();
 

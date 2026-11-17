@@ -22,7 +22,12 @@ public sealed class StockFlowApiFactory : WebApplicationFactory<Program>
                 new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:DefaultConnection"] =
-                        _connectionString
+                        _connectionString,
+                    ["Jwt:Issuer"] = "StockFlow.Tests",
+                    ["Jwt:Audience"] = "StockFlow.Tests.Client",
+                    ["Jwt:Key"] =
+                        "StockFlow-integration-tests-only-key-not-for-deployment-123456789",
+                    ["Jwt:ExpirationMinutes"] = "15"
                 });
         });
 
