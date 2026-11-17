@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
+using StockFlow.Api.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +39,19 @@ builder.Services.AddScoped<CustomerService>();
 builder.Services.AddScoped<OrderService>();
 
 var app = builder.Build();
+
+if (args.Contains("--initialize-roles"))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+
+    var roleManager = scope.ServiceProvider
+        .GetRequiredService<RoleManager<IdentityRole>>();
+
+    await RoleInitializer.InitializeAsync(roleManager);
+
+    Console.WriteLine("StockFlow roles initialized.");
+    return;
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
