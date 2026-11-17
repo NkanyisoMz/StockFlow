@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using StockFlow.Domain.Entities;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 
-public class StockFlowDbContext : DbContext
+public class StockFlowDbContext : IdentityDbContext<IdentityUser>
 {
     public StockFlowDbContext(DbContextOptions<StockFlowDbContext> options) :base(options){
 

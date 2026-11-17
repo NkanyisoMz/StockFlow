@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +19,15 @@ builder.Services.AddDbContext<StockFlowDbContext>(options =>
 {
     options.UseNpgsql(connectionString);
 });
+
+builder.Services
+    .AddIdentityCore<IdentityUser>(options =>
+    {
+        options.User.RequireUniqueEmail = true;
+        options.Password.RequiredLength = 12;
+    })
+    .AddRoles<IdentityRole>()
+    .AddEntityFrameworkStores<StockFlowDbContext>();
 
 builder.Services.AddScoped<ProductService>();
 
