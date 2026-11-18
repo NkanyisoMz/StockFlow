@@ -4,6 +4,7 @@ using StockFlow.Api.Security;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using StockFlow.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -29,9 +30,14 @@ builder.Services
     {
         options.User.RequireUniqueEmail = true;
         options.Password.RequiredLength = 12;
+        options.Lockout.AllowedForNewUsers = true;
+        options.Lockout.MaxFailedAccessAttempts = 5;
+        options.Lockout.DefaultLockoutTimeSpan =
+            TimeSpan.FromMinutes(5);
     })
     .AddRoles<IdentityRole>()
-    .AddEntityFrameworkStores<StockFlowDbContext>();
+    .AddEntityFrameworkStores<StockFlowDbContext>()
+    .AddSignInManager();
 
 builder.Services.AddScoped<ProductService>();
 
@@ -91,6 +97,8 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
+
+builder.Services.AddScoped<JwtTokenService>();
 
 var app = builder.Build();
 
