@@ -205,6 +205,109 @@ writes bypass the API.
 Docker is currently used for integration-test databases. Application
 containerization and deployment are still planned.
 
+## Authentication and Authorization
+
+StockFlow uses ASP.NET Core Identity for account storage and password
+hashing, with short-lived JWT bearer tokens for API authentication.
+
+Login users are separate from business customers.
+
+### Permissions
+
+| Operation | Staff | Admin |
+|---|---|---|
+| Read products, inventory, customers, and orders | Yes | Yes |
+| Create and update customers | Yes | Yes |
+| Receive and issue stock | Yes | Yes |
+| Create, confirm, and cancel orders | Yes | Yes |
+| Create, update, and delete products | No | Yes |
+
+Business endpoints require an Admin or Staff role. Login is anonymous.
+
+### Configuration
+
+Non-secret JWT settings are in appsettings.json:
+
+- Jwt:Issuer
+- Jwt:Audience
+- Jwt:ExpirationMinutes — currently 15
+
+Configure Jwt:Key through development user secrets or deployment secret
+configuration. Use a cryptographically random key and never commit it.
+
+### Account Provisioning
+
+Apply migrations before provisioning accounts.
+
+Initialize roles:
+
+```powershell
+dotnet run --project StockFlow.Api -- --initialize-roles
+```
+
+For administrator creation, supply BootstrapAdmin:Email and
+BootstrapAdmin:Password through configuration, then run:
+
+```powershell
+dotnet run --project StockFlow.Api -- --create-admin
+```
+
+For Staff creation, supply BootstrapStaff:Email and
+BootstrapStaff:Password, then run:
+
+```powershell
+dotnet run --project StockFlow.Api -- --create-staff
+```
+
+Development user secrets are loaded in the Development environment.
+Remove bootstrap credentials after successful setup.
+
+Provisioning refuses to modify an existing account automatically.
+If account creation succeeds but role assignment fails, inspect the
+account before retrying.
+
+### Login
+
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "YOUR_EMAIL",
+  "password": "YOUR_PASSWORD"
+}
+```
+
+Success returns accessToken and expiresAtUtc.
+
+Send the token on business requests:
+
+```http
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+Invalid credentials return 401. Invalid request fields return 400.
+After five failed password attempts, the account is locked for five minutes.
+
+Protected requests without a valid token return 401. Authenticated
+callers without the required role receive 403.
+
+### Scope and Limitations
+
+This implementation is a closed-system learning design with locally
+issued JWTs. Standards-based OAuth/OIDC issuance should be reviewed
+before production deployment.
+
+Public registration, refresh tokens, password recovery, and immediate
+token revocation are not implemented.
+
+Tokens normally remain valid until expiration even after an account's
+password or roles change. Account lockout prevents new login; it does
+not revoke an existing token.
+
+JWT payloads are readable. Passwords and sensitive business information
+must not be placed in tokens.
+
 ## API Endpoints
 
 ### Products
@@ -459,6 +562,8 @@ StockFlow/
     │   ├── StockFlowApiFactory.cs
     │   ├── PostgreSqlFixture.cs
     │   └── TestData.cs
+    ├── AuthorizationTests.cs
+    ├── AuthTests.cs
     ├── InfrastructureTests.cs
     ├── ProductInventoryTests.cs
     ├── ProductQueryTests.cs
@@ -526,7 +631,7 @@ Use the application URL printed in the terminal.
 ## Testing
 
 The baseline integration-testing milestone is complete. The latest
-local run passed all 81 test cases with no failures or skipped tests.
+local run passed all 101 test cases with no failures or skipped tests.
 
 ### Test Infrastructure
 
@@ -667,16 +772,15 @@ Replace example IDs with values returned by preceding requests.
 - [x] Concurrent-request outcome checks
 - [x] Local suite passing with 81 test cases
 
-### Authentication and Authorization — Next
+### Authentication and Authorization
 
-- [ ] User-account and password management
-- [ ] JWT authentication
-- [ ] Role-based authorization
-- [ ] Authentication and permission integration tests
+- [x] User-account and password management
+- [x] JWT authentication
+- [x] Role-based authorization
+- [x] Authentication and permission integration tests
 
-Authentication and role-based access control are not implemented yet.
 
-### React + TypeScript Frontend
+### React + TypeScript Frontend — Next
 
 - [ ] Application setup and login
 - [ ] Product management
@@ -697,10 +801,8 @@ current scope.
 
 ## Current Development Priority
 
-The baseline automated testing milestone is complete.
-
-The next milestone is JWT authentication and role-based authorization.
-Implementation will preserve the existing business rules, database
+The JWT authentication and role-based authorization has been implemented.
+Implementation has preserved the existing business rules, database
 constraints, transaction boundaries, and row-locking behavior.
 
 Subsequent milestones are the React + TypeScript frontend, application

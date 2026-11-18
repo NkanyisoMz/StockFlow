@@ -146,6 +146,37 @@ if (args.Contains("--create-admin"))
     return;
 }
 
+if (args.Contains("--create-staff"))
+{
+    var email = app.Configuration["BootstrapStaff:Email"];
+    var password = app.Configuration["BootstrapStaff:Password"];
+
+    if (string.IsNullOrWhiteSpace(email)
+        || string.IsNullOrWhiteSpace(password))
+    {
+        throw new InvalidOperationException(
+            "Configure BootstrapStaff:Email and BootstrapStaff:Password.");
+    }
+
+    await using var scope = app.Services.CreateAsyncScope();
+
+    var roleManager = scope.ServiceProvider
+        .GetRequiredService<RoleManager<IdentityRole>>();
+
+    var userManager = scope.ServiceProvider
+        .GetRequiredService<UserManager<IdentityUser>>();
+
+    await RoleInitializer.InitializeAsync(roleManager);
+
+    await StaffInitializer.InitializeAsync(
+        userManager,
+        email.Trim(),
+        password);
+
+    Console.WriteLine("Staff account created.");
+    return;
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
