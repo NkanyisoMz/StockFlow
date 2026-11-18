@@ -44,7 +44,6 @@ public sealed class AuthTests : IClassFixture<PostgreSqlFixture>
 
         var expiresAt = result.GetProperty("expiresAtUtc").GetDateTime();
 
-        // The test host is configured to issue 15-minute tokens.
         Assert.InRange(
             expiresAt,
             beforeLogin.AddMinutes(15),
@@ -146,6 +145,58 @@ public sealed class AuthTests : IClassFixture<PostgreSqlFixture>
             string.Join(
                 "; ",
                 result.Errors.Select(error => error.Description)));
+    }
+
+    [Fact]
+    public async Task Login_AfterFiveFailedAttempts_RejectsCorrectPassword()
+    {
+        using var client = CreateClient();
+
+        var email = $"lockout-{Guid.NewGuid():N}@example.com";
+        const string password = "Test-Only-Password123!";
+
+        await CreateUserAsync(email, password);
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            using var failedResponse = await client.PostAsJsonAsync(
+                "/api/auth/login",
+                new
+                {
+                    email,
+                    password = "Incorrect-Password123!"
+                });
+
+            Assert.Equal(
+                HttpStatusCode.Unauthorized,
+                failedResponse.StatusCode);
+        }
+
+        using var lockedResponse = await client.PostAsJsonAsync(
+            "/api/auth/login",
+            new { email, password });
+
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            lockedResponse.StatusCode);
+
+        var result = await lockedResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            "Invalid email or password.",
+            result.GetProperty("message").GetString());
+
+        await using var scope = _fixture.Factory.Services
+            .CreateAsyncScope();
+
+        var userManager = scope.ServiceProvider
+            .GetRequiredService<UserManager<IdentityUser>>();
+
+        var user = await userManager.FindByEmailAsync(email);
+
+        Assert.NotNull(user);
+        Assert.True(await userManager.IsLockedOutAsync(user));
     }
 
     private HttpClient CreateClient()
