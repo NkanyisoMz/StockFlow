@@ -99,12 +99,7 @@ public sealed class DatabaseConstraintTests
     [Fact]
     public async Task DeleteProduct_WithInventoryHistory_DatabaseRejectsWrite()
     {
-        using var client = _fixture.Factory.CreateClient(
-            new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
-            {
-                BaseAddress = new Uri("https://localhost"),
-                AllowAutoRedirect = false
-            });
+        using var client = _fixture.CreateAuthenticatedClient();
 
         var productId = await TestData.CreateProductAsync(
             client,

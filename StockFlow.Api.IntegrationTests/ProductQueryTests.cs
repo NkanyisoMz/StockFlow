@@ -192,11 +192,6 @@ public sealed class ProductQueryTests
 
     private HttpClient CreateClient()
     {
-        return _fixture.Factory.CreateClient(
-            new WebApplicationFactoryClientOptions
-            {
-                BaseAddress = new Uri("https://localhost"),
-                AllowAutoRedirect = false
-            });
+        return _fixture.CreateAuthenticatedClient();
     }
 }

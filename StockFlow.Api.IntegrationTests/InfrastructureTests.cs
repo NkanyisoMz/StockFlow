@@ -18,12 +18,7 @@ public sealed class InfrastructureTests
     [Fact]
     public async Task GetProducts_WithMigratedDatabase_ReturnsOk()
     {
-        using var client = _fixture.Factory.CreateClient(
-            new WebApplicationFactoryClientOptions
-            {
-                BaseAddress = new Uri("https://localhost"),
-                AllowAutoRedirect = false
-            });
+        using var client = _fixture.CreateAuthenticatedClient();
 
         using var response = await client.GetAsync("/api/products");
 
