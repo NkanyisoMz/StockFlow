@@ -8,6 +8,11 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using StockFlow.Api.Security;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
 
 namespace StockFlow.Api.IntegrationTests;
 
@@ -182,5 +187,97 @@ public sealed class AuthorizationTests
         Assert.Equal(
             100.00m,
             product.GetProperty("price").GetDecimal());
+    }
+
+    [Theory]
+    [InlineData("malformed")]
+    [InlineData("expired")]
+    [InlineData("wrong-signature")]
+    public async Task GetProducts_WithInvalidToken_ReturnsUnauthorized(
+        string scenario)
+    {
+        var configuration = _fixture.Factory.Services
+            .GetRequiredService<IConfiguration>();
+
+        var token = "not-a-jwt";
+
+        if (scenario != "malformed")
+        {
+            var key = scenario == "wrong-signature"
+                ? "Different-test-signing-key-not-used-by-the-API-123456789"
+                : configuration["Jwt:Key"]!;
+
+            var now = DateTime.UtcNow;
+
+            // Expire well beyond the configured 30-second clock tolerance.
+            var expires = scenario == "expired"
+                ? now.AddMinutes(-5)
+                : now.AddMinutes(5);
+
+            var jwt = new JwtSecurityToken(
+                issuer: configuration["Jwt:Issuer"],
+                audience: configuration["Jwt:Audience"],
+                claims: new[]
+                {
+                    new Claim("sub", "token-validation-test"),
+                    new Claim("role", AppRoles.Admin)
+                },
+                notBefore: now.AddMinutes(-10),
+                expires: expires,
+                signingCredentials: new SigningCredentials(
+                    new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),
+                    SecurityAlgorithms.HmacSha256));
+
+            token = new JwtSecurityTokenHandler().WriteToken(jwt);
+        }
+
+        using var client = _fixture.Factory.CreateClient(
+            new WebApplicationFactoryClientOptions
+            {
+                BaseAddress = new Uri("https://localhost"),
+                AllowAutoRedirect = false
+            });
+
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await client.GetAsync("/api/products");
+
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateCustomer_AsStaff_PersistsCustomer()
+    {
+        using var client = await CreateStaffClientAsync();
+
+        var email = $"staff-created-{Guid.NewGuid():N}@example.com";
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/customers",
+            new
+            {
+                name = "Staff Created Customer",
+                email
+            });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var created = await response.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        var customerId = created.GetProperty("id").GetInt32();
+
+        using var savedResponse = await client.GetAsync(
+            $"/api/customers/{customerId}");
+
+        Assert.Equal(HttpStatusCode.OK, savedResponse.StatusCode);
+
+        var saved = await savedResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(email, saved.GetProperty("email").GetString());
     }
 }
