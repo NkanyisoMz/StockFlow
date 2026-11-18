@@ -2,11 +2,14 @@ using Microsoft.AspNetCore.Mvc;
 using StockFlow.Api.DTOs;
 using StockFlow.Api.Exceptions;
 using StockFlow.Domain.Entities;
+using Microsoft.AspNetCore.Authorization;
+using StockFlow.Api.Security;
 
 namespace StockFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/orders")]
+[Authorize(Roles = AppRoles.Admin + "," + AppRoles.Staff)]
 public class OrdersController : ControllerBase
 {
     private readonly OrderService _orderService;

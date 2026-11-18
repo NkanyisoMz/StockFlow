@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using StockFlow.Api.Security;
 
 [ApiController]
 [Route("api/inventory")]
+[Authorize(Roles = AppRoles.Admin + "," + AppRoles.Staff)]
 public class InventoryController : ControllerBase
 {
     private readonly InventoryService _inventoryService;

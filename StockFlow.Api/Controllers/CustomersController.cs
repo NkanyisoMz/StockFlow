@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
 using StockFlow.Api.DTOs;
+using Microsoft.AspNetCore.Authorization;
+using StockFlow.Api.Security;
 
 [ApiController]
 [Route("api/customers")]
+[Authorize(Roles = AppRoles.Admin + "," + AppRoles.Staff)]
 public class CustomersController : ControllerBase
 {
     private readonly CustomerService _customerService;

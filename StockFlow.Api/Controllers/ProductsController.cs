@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using StockFlow.Api.Security;
 
 [ApiController]
 [Route("api/products")]
+[Authorize(Roles = AppRoles.Admin + "," + AppRoles.Staff)]
 public class ProductsController : ControllerBase
 {
     private readonly ProductService _productService;
@@ -29,6 +32,7 @@ public class ProductsController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<ActionResult<Product>> CreateProduct(CreateProductDto dto)
     {
 
@@ -50,6 +54,7 @@ public class ProductsController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> UpdateProduct(int id, UpdateProductDto dto)
     {
 
@@ -76,23 +81,24 @@ public class ProductsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-public async Task<ActionResult<Product>> DeleteProduct(int id)
-{
-    try
+    [Authorize(Roles = AppRoles.Admin)]
+    public async Task<ActionResult<Product>> DeleteProduct(int id)
     {
-        var deletedProduct = await _productService.DeleteAsync(id);
-
-        if (deletedProduct is null)
+        try
         {
-            return NotFound(
-                $"Product with ID {id} doesn't exist to be deleted.");
-        }
+            var deletedProduct = await _productService.DeleteAsync(id);
 
-        return Ok(deletedProduct);
+            if (deletedProduct is null)
+            {
+                return NotFound(
+                    $"Product with ID {id} doesn't exist to be deleted.");
+            }
+
+            return Ok(deletedProduct);
+        }
+        catch (ProductInUseException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
     }
-    catch (ProductInUseException ex)
-    {
-        return Conflict(new { message = ex.Message });
-    }
-}
 }
