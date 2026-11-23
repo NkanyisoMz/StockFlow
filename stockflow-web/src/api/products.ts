@@ -57,3 +57,45 @@ export async function getProducts(
 
   return response.json()
 }
+
+export interface CreateProductRequest {
+  name: string
+  sku: string
+  price: number
+}
+
+export async function createProduct(
+  token: string,
+  product: CreateProductRequest,
+): Promise<void> {
+  const response = await fetch('/api/products', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(product),
+  })
+
+  if (response.status === 401) {
+    throw new UnauthorizedError()
+  }
+
+  if (response.status === 403) {
+    throw new Error('Only administrators can create products.')
+  }
+
+  if (response.status === 409) {
+    throw new Error('A product with this SKU already exists.')
+  }
+
+  if (response.status === 400) {
+    throw new Error(
+      'Check the product details. Price must be non-negative and have at most two decimal places.',
+    )
+  }
+
+  if (!response.ok) {
+    throw new Error('Unable to create the product.')
+  }
+}

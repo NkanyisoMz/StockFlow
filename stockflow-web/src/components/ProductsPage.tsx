@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { getProducts, UnauthorizedError } from '../api/products'
 import type { PagedResult, Product } from '../api/products'
+import CreateProductForm from './CreateProductForm'
+import { hasRole } from '../auth/roles'
 
 interface ProductsPageProps {
   token: string
@@ -14,10 +16,24 @@ export default function ProductsPage({
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [refreshVersion, setRefreshVersion] = useState(0)
 
   return (
     <div>
       <h2>Products</h2>
+
+      {hasRole(token, 'Admin') && (
+        <CreateProductForm
+            token={token}
+            onUnauthorized={onUnauthorized}
+            onCreated={() => {
+            setSearchInput('')
+            setSearch('')
+            setPage(1)
+            setRefreshVersion((version) => version + 1)
+            }}
+        />
+        )}
 
       <form
         className="search-form"
@@ -53,7 +69,7 @@ export default function ProductsPage({
       </form>
 
       <ProductResults
-        key={JSON.stringify([search, page, token])}
+        key={JSON.stringify([search, page, token, refreshVersion])}
         token={token}
         search={search}
         page={page}
