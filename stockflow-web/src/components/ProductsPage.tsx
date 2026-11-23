@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
-import { getProducts, UnauthorizedError } from '../api/products'
 import type { PagedResult, Product } from '../api/products'
 import CreateProductForm from './CreateProductForm'
 import { hasRole } from '../auth/roles'
+import {
+    deleteProduct,
+    getProducts,
+    UnauthorizedError,
+} from '../api/products'
 
 interface ProductsPageProps {
   token: string
@@ -75,6 +79,9 @@ export default function ProductsPage({
         page={page}
         onPageChange={setPage}
         onUnauthorized={onUnauthorized}
+        onDeleted={() => {
+            setPage(1)
+            setRefreshVersion((version) => version + 1)}}
       />
     </div>
   )
@@ -84,6 +91,7 @@ interface ProductResultsProps extends ProductsPageProps {
   search: string
   page: number
   onPageChange: (page: number) => void
+  onDeleted: () => void
 }
 
 function ProductResults({
@@ -92,10 +100,44 @@ function ProductResults({
   page,
   onPageChange,
   onUnauthorized,
+  onDeleted,
 }: ProductResultsProps) {
   const [result, setResult] = useState<PagedResult<Product> | null>(null)
   const [error, setError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [deletingId, setDeletingId] = useState<number | null>(null)
 
+    async function handleDelete(product: Product) {
+    if (!window.confirm(`Delete "${product.name}"? This cannot be undone.`)) {
+        return
+    }
+
+    setDeleteError('')
+    setDeletingId(product.id)
+
+    try {
+        await deleteProduct(token, product.id)
+    } catch (error) {
+        if (error instanceof UnauthorizedError) {
+        onUnauthorized()
+        return
+        }
+
+        setDeleteError(
+        error instanceof TypeError
+            ? 'Cannot reach the API.'
+            : error instanceof Error
+            ? error.message
+            : 'Unable to delete the product.',
+        )
+
+        return
+    } finally {
+        setDeletingId(null)
+    }
+
+    onDeleted()
+    }
   useEffect(() => {
     const controller = new AbortController()
 
@@ -148,6 +190,7 @@ function ProductResults({
     <div>
       <p role="status">{result.totalCount} matching products.</p>
 
+      {deleteError && <p role="alert">{deleteError}</p>}
       {result.items.length === 0 ? (
         <p>No products found.</p>
       ) : (
@@ -159,6 +202,9 @@ function ProductResults({
                 <th scope="col">SKU</th>
                 <th scope="col">Price</th>
                 <th scope="col">Stock</th>
+                {hasRole(token, 'Admin') && (
+                    <th scope="col">Actions</th>
+                )}
               </tr>
             </thead>
 
@@ -169,6 +215,17 @@ function ProductResults({
                   <td>{product.sku}</td>
                   <td>{product.price.toFixed(2)}</td>
                   <td>{product.quantityInStock}</td>
+                  {hasRole(token, 'Admin') && (
+                  <td>
+                        <button
+                        type="button"
+                        disabled={deletingId !== null}
+                        onClick={() => void handleDelete(product)}
+                        >
+                        {deletingId === product.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                  </td>
+                  )}
                 </tr>
               ))}
             </tbody>

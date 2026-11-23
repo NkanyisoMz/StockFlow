@@ -99,3 +99,37 @@ export async function createProduct(
     throw new Error('Unable to create the product.')
   }
 }
+
+export async function deleteProduct(
+  token: string,
+  productId: number,
+): Promise<void> {
+  const response = await fetch(`/api/products/${productId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  if (response.status === 401) {
+    throw new UnauthorizedError()
+  }
+
+  if (response.status === 403) {
+    throw new Error('Only administrators can delete products.')
+  }
+
+  if (response.status === 404) {
+    throw new Error('This product no longer exists. Refresh the list.')
+  }
+
+  if (response.status === 409) {
+    throw new Error(
+      'This product cannot be deleted because it has inventory history or order items.',
+    )
+  }
+
+  if (!response.ok) {
+    throw new Error('Unable to delete the product.')
+  }
+}
