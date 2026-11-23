@@ -37,7 +37,8 @@ builder.Services
     })
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<StockFlowDbContext>()
-    .AddSignInManager();
+    .AddSignInManager()
+    .AddDefaultTokenProviders();
 
 builder.Services.AddScoped<ProductService>();
 
@@ -102,6 +103,28 @@ builder.Services.AddScoped<JwtTokenService>();
 
 var app = builder.Build();
 
+if (args.Contains("--reset-password"))
+{
+    if (!app.Environment.IsDevelopment())
+    {
+        Console.Error.WriteLine("Password reset is available only in Development.");
+        Environment.ExitCode = 1;
+        return;
+    }
+    try
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var manager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+        Environment.ExitCode = await PasswordResetCommand.RunAsync(manager, app.Environment);
+    }
+    catch (Exception)
+    {
+        // Avoid printing tokens, credentials, or database exception details.
+        Console.Error.WriteLine("Password reset could not complete. Check local database availability and configuration.");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
 if (args.Contains("--initialize-roles"))
 {
     await using var scope = app.Services.CreateAsyncScope();
