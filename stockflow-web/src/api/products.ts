@@ -133,3 +133,44 @@ export async function deleteProduct(
     throw new Error('Unable to delete the product.')
   }
 }
+
+export async function updateProduct(
+  token: string,
+  productId: number,
+  product: CreateProductRequest,
+): Promise<void> {
+  const response = await fetch(`/api/products/${productId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(product),
+  })
+
+  if (response.status === 401) {
+    throw new UnauthorizedError()
+  }
+
+  if (response.status === 403) {
+    throw new Error('Only administrators can update products.')
+  }
+
+  if (response.status === 404) {
+    throw new Error('This product no longer exists.')
+  }
+
+  if (response.status === 409) {
+    throw new Error('Another product already uses this SKU.')
+  }
+
+  if (response.status === 400) {
+    throw new Error(
+      'Check the product details. Price must be non-negative and have at most two decimal places.',
+    )
+  }
+
+  if (!response.ok) {
+    throw new Error('Unable to update the product.')
+  }
+}

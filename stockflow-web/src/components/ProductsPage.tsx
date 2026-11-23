@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { PagedResult, Product } from '../api/products'
 import CreateProductForm from './CreateProductForm'
 import { hasRole } from '../auth/roles'
+import EditProductForm from './EditProductForm'
 import {
     deleteProduct,
     getProducts,
@@ -79,7 +80,7 @@ export default function ProductsPage({
         page={page}
         onPageChange={setPage}
         onUnauthorized={onUnauthorized}
-        onDeleted={() => {
+        onChanged={() => {
             setPage(1)
             setRefreshVersion((version) => version + 1)}}
       />
@@ -91,7 +92,7 @@ interface ProductResultsProps extends ProductsPageProps {
   search: string
   page: number
   onPageChange: (page: number) => void
-  onDeleted: () => void
+  onChanged: () => void
 }
 
 function ProductResults({
@@ -100,12 +101,13 @@ function ProductResults({
   page,
   onPageChange,
   onUnauthorized,
-  onDeleted,
+  onChanged,
 }: ProductResultsProps) {
   const [result, setResult] = useState<PagedResult<Product> | null>(null)
   const [error, setError] = useState('')
   const [deleteError, setDeleteError] = useState('')
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
 
     async function handleDelete(product: Product) {
     if (!window.confirm(`Delete "${product.name}"? This cannot be undone.`)) {
@@ -136,7 +138,7 @@ function ProductResults({
         setDeletingId(null)
     }
 
-    onDeleted()
+    onChanged()
     }
   useEffect(() => {
     const controller = new AbortController()
@@ -178,6 +180,22 @@ function ProductResults({
     return () => controller.abort()
   }, [token, search, page, onUnauthorized])
 
+  if (editingProduct) {
+    return (
+        <EditProductForm
+        key={editingProduct.id}
+        token={token}
+        product={editingProduct}
+        onUnauthorized={onUnauthorized}
+        onCancel={() => setEditingProduct(null)}
+        onSaved={() => {
+            setEditingProduct(null)
+            onChanged()
+        }}
+        />
+    )
+    }
+
   if (error) {
     return <p role="alert">{error}</p>
   }
@@ -215,6 +233,13 @@ function ProductResults({
                   <td>{product.sku}</td>
                   <td>{product.price.toFixed(2)}</td>
                   <td>{product.quantityInStock}</td>
+                  <button
+                        type="button"
+                        disabled={deletingId !== null}
+                        onClick={() => setEditingProduct(product)}
+                        >
+                        Edit
+                  </button>
                   {hasRole(token, 'Admin') && (
                   <td>
                         <button
