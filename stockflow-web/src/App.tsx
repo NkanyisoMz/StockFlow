@@ -3,10 +3,13 @@ import type { LoginResponse } from './api/auth'
 import LoginForm from './components/LoginForm'
 import ProductsPage from './components/ProductsPage'
 import './App.css'
+import CustomersPage from './components/CustomersPage'
 
 export default function App() {
   const [session, setSession] = useState<LoginResponse | null>(null)
   const [notice, setNotice] = useState('')
+  const [activePage, setActivePage] =
+  useState<'products' | 'customers'>('products')
 
   const handleSessionExpired = useCallback(() => {
     setSession(null)
@@ -16,6 +19,7 @@ export default function App() {
   function handleLogin(nextSession: LoginResponse) {
     setNotice('')
     setSession(nextSession)
+    setActivePage('products')
   }
 
   function handleLogout() {
@@ -50,10 +54,35 @@ export default function App() {
             <button onClick={handleLogout}>Sign out</button>
           </header>
 
-          <ProductsPage
-            token={session.accessToken}
-            onUnauthorized={handleSessionExpired}
-          />
+          <nav className="module-navigation" aria-label="Main navigation">
+            <button
+              type="button"
+              aria-current={activePage === 'products' ? 'page' : undefined}
+              onClick={() => setActivePage('products')}
+            >
+              Products & inventory
+            </button>
+
+            <button
+              type="button"
+              aria-current={activePage === 'customers' ? 'page' : undefined}
+              onClick={() => setActivePage('customers')}
+            >
+              Customers
+            </button>
+          </nav>
+
+          {activePage === 'products' ? (
+            <ProductsPage
+              token={session.accessToken}
+              onUnauthorized={handleSessionExpired}
+            />
+          ) : (
+            <CustomersPage
+              token={session.accessToken}
+              onUnauthorized={handleSessionExpired}
+            />
+          )}
         </section>
       ) : (
         <>

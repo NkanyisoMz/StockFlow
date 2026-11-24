@@ -113,3 +113,18 @@ select {
 td button+button {
   margin-left: 0.5rem;
 }
+
+.module-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid #dce1e8;
+}
+
+.module-navigation button[aria-current='page'] {
+  background: #172033;
+  color: white;
+  border-color: #172033;
+}
