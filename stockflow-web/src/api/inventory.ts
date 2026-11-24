@@ -42,3 +42,46 @@ export async function recordStockMovement(
     throw new Error('Unable to record the movement. Check the entered details.')
   }
 }
+
+export interface InventoryMovement {
+  id: number
+  productId: number
+  type: number
+  quantity: number
+  reason: string
+  createdAt: string
+}
+
+export async function getMovementHistory(
+  token: string,
+  productId: number,
+  signal: AbortSignal,
+): Promise<InventoryMovement[]> {
+  const response = await fetch(
+    `/api/inventory/products/${productId}/history`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      signal,
+    },
+  )
+
+  if (response.status === 401) {
+    throw new UnauthorizedError()
+  }
+
+  if (response.status === 403) {
+    throw new Error('You do not have permission to view inventory history.')
+  }
+
+  if (response.status === 404) {
+    throw new Error('This product no longer exists.')
+  }
+
+  if (!response.ok) {
+    throw new Error('Unable to load inventory history.')
+  }
+
+  return response.json()
+}

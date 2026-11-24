@@ -4,6 +4,7 @@ import CreateProductForm from './CreateProductForm'
 import { hasRole } from '../auth/roles'
 import EditProductForm from './EditProductForm'
 import StockMovementForm from './StockMovementForm'
+import MovementHistory from './MovementHistory'
 import {
     deleteProduct,
     getProducts,
@@ -110,6 +111,7 @@ function ProductResults({
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [stockProduct, setStockProduct] = useState<Product | null>(null)
+  const [historyProduct, setHistoryProduct] = useState<Product | null>(null)
 
     async function handleDelete(product: Product) {
     if (!window.confirm(`Delete "${product.name}"? This cannot be undone.`)) {
@@ -214,6 +216,18 @@ function ProductResults({
     )
     }
 
+  if (historyProduct) {
+    return (
+      <MovementHistory
+        key={historyProduct.id}
+        token={token}
+        product={historyProduct}
+        onUnauthorized={onUnauthorized}
+        onBack={() => setHistoryProduct(null)}
+      />
+    )
+  }
+
   if (error) {
     return <p role="alert">{error}</p>
   }
@@ -256,6 +270,14 @@ function ProductResults({
                       onClick={() => setStockProduct(product)}
                     >
                       Manage stock
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={deletingId !== null}
+                      onClick={() => setHistoryProduct(product)}
+                    >
+                      History
                     </button>
 
                     {hasRole(token, 'Admin') && (
