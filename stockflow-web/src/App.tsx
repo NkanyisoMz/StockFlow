@@ -4,12 +4,13 @@ import LoginForm from './components/LoginForm'
 import ProductsPage from './components/ProductsPage'
 import './App.css'
 import CustomersPage from './components/CustomersPage'
+import OrdersPage from './components/OrdersPage'
 
 export default function App() {
   const [session, setSession] = useState<LoginResponse | null>(null)
   const [notice, setNotice] = useState('')
   const [activePage, setActivePage] =
-  useState<'products' | 'customers'>('products')
+  useState<'products' | 'customers' | 'orders'>('products')
 
   const handleSessionExpired = useCallback(() => {
     setSession(null)
@@ -70,15 +71,32 @@ export default function App() {
             >
               Customers
             </button>
+
+            <button
+              type="button"
+              aria-current={activePage === 'orders' ? 'page' : undefined}
+              onClick={() => setActivePage('orders')}
+            >
+              Orders
+            </button>
           </nav>
 
-          {activePage === 'products' ? (
+          {activePage === 'products' && (
             <ProductsPage
               token={session.accessToken}
               onUnauthorized={handleSessionExpired}
             />
-          ) : (
+          )}
+
+          {activePage === 'customers' && (
             <CustomersPage
+              token={session.accessToken}
+              onUnauthorized={handleSessionExpired}
+            />
+          )}
+
+          {activePage === 'orders' && (
+            <OrdersPage
               token={session.accessToken}
               onUnauthorized={handleSessionExpired}
             />
