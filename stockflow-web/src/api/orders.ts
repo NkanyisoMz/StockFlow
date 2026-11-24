@@ -18,6 +18,11 @@ export interface Order {
   items: OrderItem[]
 }
 
+export interface OrderFilters {
+  customerId?: number
+  status?: number
+}
+
 export function orderStatusLabel(status: number): string {
   switch (status) {
     case 0:
@@ -34,12 +39,21 @@ export function orderStatusLabel(status: number): string {
 export async function getOrders(
   token: string,
   page: number,
+  filters: OrderFilters,
   signal: AbortSignal,
 ): Promise<PagedResult<Order>> {
   const query = new URLSearchParams({
     page: String(page),
     pageSize: '10',
   })
+
+  if (filters.customerId !== undefined) {
+    query.set('customerId', String(filters.customerId))
+  }
+
+  if (filters.status !== undefined) {
+    query.set('status', String(filters.status))
+  }
 
   const response = await fetch(`/api/orders?${query}`, {
     headers: {

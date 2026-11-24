@@ -3,6 +3,7 @@ import { getOrders, orderStatusLabel } from '../api/orders'
 import type { Order } from '../api/orders'
 import { UnauthorizedError } from '../api/products'
 import type { PagedResult } from '../api/products'
+import type { OrderFilters } from '../api/orders'
 
 interface OrdersPageProps {
   token: string
@@ -14,16 +15,95 @@ export default function OrdersPage({
   onUnauthorized,
 }: OrdersPageProps) {
   const [page, setPage] = useState(1)
+  const [customerInput, setCustomerInput] = useState('')
+  const [statusInput, setStatusInput] = useState('')
+  const [filters, setFilters] = useState<OrderFilters>({})
+  const [filterError, setFilterError] = useState('')
 
   return (
     <div>
       <h2>Orders</h2>
       <p>Customer orders managed by your team.</p>
 
+      <form
+        className="search-form"
+        onSubmit={(event) => {
+            event.preventDefault()
+            setFilterError('')
+
+            const customerId = customerInput.trim()
+            ? Number(customerInput)
+            : undefined
+
+            if (
+            customerId !== undefined &&
+            (!Number.isInteger(customerId) ||
+                customerId < 1 ||
+                customerId > 2_147_483_647)
+            ) {
+            setFilterError('Enter a valid positive customer ID.')
+            return
+            }
+
+            setFilters({
+            customerId,
+            status: statusInput === '' ? undefined : Number(statusInput),
+            })
+
+            setPage(1)
+        }}
+        >
+        <div>
+            <label htmlFor="order-customer-filter">Customer ID</label>
+            <input
+            id="order-customer-filter"
+            type="number"
+            min="1"
+            max="2147483647"
+            step="1"
+            value={customerInput}
+            onChange={(event) => setCustomerInput(event.target.value)}
+            placeholder="All customers"
+            />
+        </div>
+
+        <div>
+            <label htmlFor="order-status-filter">Status</label>
+            <select
+            id="order-status-filter"
+            value={statusInput}
+            onChange={(event) => setStatusInput(event.target.value)}
+            >
+            <option value="">All statuses</option>
+            <option value="0">Pending</option>
+            <option value="1">Confirmed</option>
+            <option value="2">Cancelled</option>
+            </select>
+        </div>
+
+        <button type="submit">Apply filters</button>
+
+        <button
+            type="button"
+            onClick={() => {
+            setCustomerInput('')
+            setStatusInput('')
+            setFilters({})
+            setFilterError('')
+            setPage(1)
+            }}
+        >
+            Clear
+        </button>
+
+        {filterError && <p role="alert">{filterError}</p>}
+        </form>
+
       <OrderResults
-        key={JSON.stringify([page, token])}
+        key={JSON.stringify([page, token, filters.customerId, filters.status])}
         token={token}
         page={page}
+        filters={filters}
         onPageChange={setPage}
         onUnauthorized={onUnauthorized}
       />
@@ -33,12 +113,14 @@ export default function OrdersPage({
 
 interface OrderResultsProps extends OrdersPageProps {
   page: number
+  filters: OrderFilters
   onPageChange: (page: number) => void
 }
 
 function OrderResults({
   token,
   page,
+  filters,
   onPageChange,
   onUnauthorized,
 }: OrderResultsProps) {
@@ -50,7 +132,12 @@ function OrderResults({
 
     async function loadOrders() {
       try {
-        const orders = await getOrders(token, page, controller.signal)
+        const orders = await getOrders(
+            token,
+            page,
+            filters,
+            controller.signal,
+            )
 
         if (!controller.signal.aborted) {
           setResult(orders)
@@ -78,7 +165,7 @@ function OrderResults({
     void loadOrders()
 
     return () => controller.abort()
-  }, [token, page, onUnauthorized])
+  }, [token, page, filters, onUnauthorized])
 
   if (error) {
     return <p role="alert">{error}</p>
@@ -90,7 +177,7 @@ function OrderResults({
 
   return (
     <div>
-      <p role="status">{result.totalCount} orders in total.</p>
+      <p role="status">{result.totalCount} matching orders.</p>
 
       {result.items.length === 0 ? (
         <p>No orders found.</p>
