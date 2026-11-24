@@ -2,16 +2,77 @@ import { useEffect, useState } from 'react'
 import { getCustomers } from '../api/customers'
 import type { Customer } from '../api/customers'
 import { UnauthorizedError } from '../api/products'
+import CustomerForm from './CustomerForm'
 
 interface CustomersPageProps {
   token: string
   onUnauthorized: () => void
 }
 
+interface CustomerListProps extends CustomersPageProps {
+  onEdit: (customer: Customer) => void
+}
+
 export default function CustomersPage({
   token,
   onUnauthorized,
 }: CustomersPageProps) {
+  const [formOpen, setFormOpen] = useState(false)
+  const [selectedCustomer, setSelectedCustomer] =
+    useState<Customer | undefined>(undefined)
+  const [refreshVersion, setRefreshVersion] = useState(0)
+  const [notice, setNotice] = useState('')
+
+  if (formOpen) {
+    return (
+      <CustomerForm
+        token={token}
+        customer={selectedCustomer}
+        onUnauthorized={onUnauthorized}
+        onCancel={() => setFormOpen(false)}
+        onSaved={() => {
+          setFormOpen(false)
+          setNotice('Customer saved.')
+          setRefreshVersion((version) => version + 1)
+        }}
+      />
+    )
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => {
+          setSelectedCustomer(undefined)
+          setNotice('')
+          setFormOpen(true)
+        }}
+      >
+        Create customer
+      </button>
+
+      {notice && <p role="status">{notice}</p>}
+
+      <CustomerList
+        key={refreshVersion}
+        token={token}
+        onUnauthorized={onUnauthorized}
+        onEdit={(customer) => {
+          setSelectedCustomer(customer)
+          setNotice('')
+          setFormOpen(true)
+        }}
+      />
+    </div>
+  )
+}
+
+function CustomerList({
+  token,
+  onUnauthorized,
+  onEdit,
+}: CustomerListProps) {
   const [customers, setCustomers] = useState<Customer[] | null>(null)
   const [error, setError] = useState('')
 
@@ -69,6 +130,7 @@ export default function CustomersPage({
                 <th scope="col">Name</th>
                 <th scope="col">Email</th>
                 <th scope="col">Created</th>
+                <th scope="col">Actions</th>
               </tr>
             </thead>
 
@@ -79,6 +141,11 @@ export default function CustomersPage({
                   <td>{customer.email}</td>
                   <td>
                     {new Date(customer.createdAt).toLocaleDateString()}
+                  </td>
+                  <td>
+                    <button type="button" onClick={() => onEdit(customer)}>
+                        Edit
+                    </button>
                   </td>
                 </tr>
               ))}
