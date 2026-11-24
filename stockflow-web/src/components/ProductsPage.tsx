@@ -3,6 +3,7 @@ import type { PagedResult, Product } from '../api/products'
 import CreateProductForm from './CreateProductForm'
 import { hasRole } from '../auth/roles'
 import EditProductForm from './EditProductForm'
+import StockMovementForm from './StockMovementForm'
 import {
     deleteProduct,
     getProducts,
@@ -108,6 +109,7 @@ function ProductResults({
   const [deleteError, setDeleteError] = useState('')
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+  const [stockProduct, setStockProduct] = useState<Product | null>(null)
 
     async function handleDelete(product: Product) {
     if (!window.confirm(`Delete "${product.name}"? This cannot be undone.`)) {
@@ -180,6 +182,22 @@ function ProductResults({
     return () => controller.abort()
   }, [token, search, page, onUnauthorized])
 
+  if (stockProduct) {
+    return (
+      <StockMovementForm
+        key={stockProduct.id}
+        token={token}
+        product={stockProduct}
+        onUnauthorized={onUnauthorized}
+        onCancel={() => setStockProduct(null)}
+        onSaved={() => {
+          setStockProduct(null)
+          onChanged()
+        }}
+      />
+    )
+  }
+
   if (editingProduct) {
     return (
         <EditProductForm
@@ -220,9 +238,7 @@ function ProductResults({
                 <th scope="col">SKU</th>
                 <th scope="col">Price</th>
                 <th scope="col">Stock</th>
-                {hasRole(token, 'Admin') && (
-                    <th scope="col">Actions</th>
-                )}
+                <th scope="col">Actions</th>
               </tr>
             </thead>
 
@@ -233,24 +249,35 @@ function ProductResults({
                   <td>{product.sku}</td>
                   <td>{product.price.toFixed(2)}</td>
                   <td>{product.quantityInStock}</td>
-                  <button
-                        type="button"
-                        disabled={deletingId !== null}
-                        onClick={() => setEditingProduct(product)}
-                        >
-                        Edit
-                  </button>
-                  {hasRole(token, 'Admin') && (
                   <td>
+                    <button
+                      type="button"
+                      disabled={deletingId !== null}
+                      onClick={() => setStockProduct(product)}
+                    >
+                      Manage stock
+                    </button>
+
+                    {hasRole(token, 'Admin') && (
+                      <>
                         <button
-                        type="button"
-                        disabled={deletingId !== null}
-                        onClick={() => void handleDelete(product)}
+                          type="button"
+                          disabled={deletingId !== null}
+                          onClick={() => setEditingProduct(product)}
                         >
-                        {deletingId === product.id ? 'Deleting…' : 'Delete'}
+                          Edit
                         </button>
+
+                        <button
+                          type="button"
+                          disabled={deletingId !== null}
+                          onClick={() => void handleDelete(product)}
+                        >
+                          {deletingId === product.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                      </>
+                    )}
                   </td>
-                  )}
                 </tr>
               ))}
             </tbody>

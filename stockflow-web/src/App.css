@@ -103,3 +103,13 @@ fieldset {
 fieldset>div {
   margin-bottom: 1rem;
 }
+
+select {
+  font: inherit;
+  width: 100%;
+  padding: 0.625rem;
+}
+
+td button+button {
+  margin-left: 0.5rem;
+}
