@@ -4,6 +4,7 @@ import type { Order } from '../api/orders'
 import { UnauthorizedError } from '../api/products'
 import type { PagedResult } from '../api/products'
 import type { OrderFilters } from '../api/orders'
+import OrderDetails from './OrderDetails'
 
 interface OrdersPageProps {
   token: string
@@ -19,6 +20,20 @@ export default function OrdersPage({
   const [statusInput, setStatusInput] = useState('')
   const [filters, setFilters] = useState<OrderFilters>({})
   const [filterError, setFilterError] = useState('')
+  const [selectedOrderId, setSelectedOrderId] =
+  useState<number | null>(null)
+
+  if (selectedOrderId !== null) {
+    return (
+      <OrderDetails
+        key={selectedOrderId}
+        token={token}
+        orderId={selectedOrderId}
+        onUnauthorized={onUnauthorized}
+        onBack={() => setSelectedOrderId(null)}
+      />
+    )
+  }
 
   return (
     <div>
@@ -106,6 +121,7 @@ export default function OrdersPage({
         filters={filters}
         onPageChange={setPage}
         onUnauthorized={onUnauthorized}
+        onSelectOrder={setSelectedOrderId}
       />
     </div>
   )
@@ -115,6 +131,7 @@ interface OrderResultsProps extends OrdersPageProps {
   page: number
   filters: OrderFilters
   onPageChange: (page: number) => void
+  onSelectOrder: (orderId: number) => void
 }
 
 function OrderResults({
@@ -123,6 +140,7 @@ function OrderResults({
   filters,
   onPageChange,
   onUnauthorized,
+  onSelectOrder,
 }: OrderResultsProps) {
   const [result, setResult] = useState<PagedResult<Order> | null>(null)
   const [error, setError] = useState('')
@@ -197,7 +215,14 @@ function OrderResults({
             <tbody>
               {result.items.map((order) => (
                 <tr key={order.id}>
-                  <td>#{order.id}</td>
+                  <td>
+                    <button
+                      type="button"
+                      onClick={() => onSelectOrder(order.id)}
+                    >
+                      View #{order.id}
+                    </button>
+                  </td>
                   <td>{order.customerId}</td>
                   <td>{new Date(order.orderDate).toLocaleString()}</td>
                   <td>{orderStatusLabel(order.status)}</td>
