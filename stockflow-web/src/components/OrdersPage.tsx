@@ -5,6 +5,7 @@ import { UnauthorizedError } from '../api/products'
 import type { PagedResult } from '../api/products'
 import type { OrderFilters } from '../api/orders'
 import OrderDetails from './OrderDetails'
+import CreateOrderForm from './CreateOrderForm'
 
 interface OrdersPageProps {
   token: string
@@ -22,6 +23,21 @@ export default function OrdersPage({
   const [filterError, setFilterError] = useState('')
   const [selectedOrderId, setSelectedOrderId] =
   useState<number | null>(null)
+  const [creatingOrder, setCreatingOrder] = useState(false)
+
+  if (creatingOrder) {
+    return (
+      <CreateOrderForm
+        token={token}
+        onUnauthorized={onUnauthorized}
+        onCancel={() => setCreatingOrder(false)}
+        onCreated={(orderId) => {
+          setCreatingOrder(false)
+          setSelectedOrderId(orderId)
+        }}
+      />
+    )
+  }
 
   if (selectedOrderId !== null) {
     return (
@@ -38,6 +54,9 @@ export default function OrdersPage({
   return (
     <div>
       <h2>Orders</h2>
+      <button type="button" onClick={() => setCreatingOrder(true)}>
+        Create order
+      </button>
       <p>Customer orders managed by your team.</p>
 
       <form

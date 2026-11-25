@@ -248,6 +248,7 @@ function ProductResults({
           <table>
             <thead>
               <tr>
+                <th scope="col">ID</th>
                 <th scope="col">Name</th>
                 <th scope="col">SKU</th>
                 <th scope="col">Price</th>
@@ -259,6 +260,7 @@ function ProductResults({
             <tbody>
               {result.items.map((product) => (
                 <tr key={product.id}>
+                  <td>{product.id}</td>
                   <td>{product.name}</td>
                   <td>{product.sku}</td>
                   <td>{product.price.toFixed(2)}</td>

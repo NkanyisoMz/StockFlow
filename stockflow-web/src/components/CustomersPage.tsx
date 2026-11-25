@@ -127,6 +127,7 @@ function CustomerList({
           <table>
             <thead>
               <tr>
+                <th scope="col">ID</th>
                 <th scope="col">Name</th>
                 <th scope="col">Email</th>
                 <th scope="col">Created</th>
@@ -137,6 +138,7 @@ function CustomerList({
             <tbody>
               {customers.map((customer) => (
                 <tr key={customer.id}>
+                  <td>{customer.id}</td>
                   <td>{customer.name}</td>
                   <td>{customer.email}</td>
                   <td>

@@ -153,3 +153,49 @@ export async function changeOrderStatus(
 
   return response.json()
 }
+
+export interface CreateOrderInput {
+  customerId: number
+  items: {
+    productId: number
+    quantity: number
+  }[]
+}
+
+export async function createOrder(
+  token: string,
+  input: CreateOrderInput,
+): Promise<Order> {
+  const response = await fetch('/api/orders', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(input),
+  })
+
+  if (response.status === 401) {
+    throw new UnauthorizedError()
+  }
+
+  if (response.status === 403) {
+    throw new Error('You do not have permission to create orders.')
+  }
+
+  if (response.status === 404) {
+    throw new Error('A selected customer or product no longer exists.')
+  }
+
+  if (response.status === 400) {
+    throw new Error('Check the customer, products, and quantities.')
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      'The order outcome could not be confirmed. Check the order list before submitting again.',
+    )
+  }
+
+  return response.json()
+}
