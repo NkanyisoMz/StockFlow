@@ -1,44 +1,22 @@
 main {
-  max-width: 30rem;
-  margin: 4rem auto;
-  padding: 1.5rem;
-}
-
-form,
-section {
-  background: white;
-  padding: 1.5rem;
-  border: 1px solid #dce1e8;
-  border-radius: 0.5rem;
-}
-
-form>div {
-  margin-bottom: 1rem;
-}
-
-label {
-  display: block;
-  margin-bottom: 0.375rem;
-}
-
-input {
   width: 100%;
-  padding: 0.625rem;
-  border: 1px solid #8993a3;
-  border-radius: 0.25rem;
-}
-
-button {
-  padding: 0.625rem 1rem;
-}
-
-[role='alert'] {
-  color: #a01616;
+  max-width: 32rem;
+  margin: 4rem auto;
+  padding: 1rem;
 }
 
 main.workspace {
-  max-width: 70rem;
-  margin: 2rem auto;
+  max-width: 80rem;
+  margin: 1.5rem auto;
+}
+
+main>section,
+main>form {
+  padding: 2rem;
+  border: 1px solid #dce3ec;
+  border-radius: 1rem;
+  background: white;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 5%);
 }
 
 .app-header {
@@ -46,32 +24,67 @@ main.workspace {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  margin-bottom: 1.5rem;
 }
 
-.table-container {
-  overflow-x: auto;
+.app-header h1 {
+  margin: 0;
+  color: #0f766e;
+  letter-spacing: -0.04em;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
+.module-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-th,
-td {
-  padding: 0.75rem;
-  text-align: left;
-  border-bottom: 1px solid #dce1e8;
+.module-navigation button {
+  background: #f8fafc;
+}
+
+.module-navigation button[aria-current="page"] {
+  border-color: #0f172a;
+  background: #0f172a;
+  color: white;
+}
+
+.module-navigation button[aria-current="page"]:hover {
+  background: #1e293b;
+}
+
+form {
+  margin: 1rem 0 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid #dce3ec;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+}
+
+form>div,
+fieldset>div {
+  margin-bottom: 1rem;
+}
+
+fieldset>div>label:not(:first-child) {
+  margin-top: 0.75rem;
+}
+
+form button {
+  margin: 0.25rem 0.5rem 0.25rem 0;
 }
 
 .search-form {
-  margin-bottom: 1.5rem;
-  padding: 0;
-  border: 0;
+  padding: 1rem;
+  background: #f8fafc;
 }
 
 .search-controls {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
@@ -81,57 +94,133 @@ td {
   min-width: 10rem;
 }
 
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-fieldset {
-  border: 0;
+.search-controls button {
   margin: 0;
-  padding: 0;
 }
 
-fieldset>div {
-  margin-bottom: 1rem;
-}
-
-select {
-  font: inherit;
+.table-container {
   width: 100%;
-  padding: 0.625rem;
+  overflow-x: auto;
+  margin-top: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
 }
 
-td button+button {
-  margin-left: 0.5rem;
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
 }
 
-.module-navigation {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding-bottom: 1rem;
-  margin-bottom: 1.5rem;
-  border-bottom: 1px solid #dce1e8;
+th,
+td {
+  padding: 0.875rem 1rem;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-.module-navigation button[aria-current='page'] {
-  background: #172033;
-  color: white;
-  border-color: #172033;
+th {
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody tr:hover {
+  background: #f8fafc;
+}
+
+td {
+  overflow-wrap: anywhere;
+}
+
+td button {
+  min-height: 2.25rem;
+  margin: 0.2rem;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.pagination,
 .order-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 1rem 0;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.pagination {
+  justify-content: space-between;
+}
+
+.pagination span {
+  color: #526176;
+  font-size: 0.875rem;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.75rem 1.5rem;
+  padding: 1.25rem;
+  border-radius: 0.75rem;
+  background: #f1f5f9;
+}
+
+dt {
+  color: #526176;
+  font-weight: 600;
+}
+
+dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+
+  main,
+  main.workspace {
+    margin: 0;
+    padding: 0.75rem;
+  }
+
+  main>section,
+  main>form {
+    padding: 1rem;
+  }
+
+  form {
+    padding: 1rem;
+  }
+
+  .app-header {
+    align-items: flex-start;
+  }
+
+  .module-navigation button {
+    flex: 1 1 auto;
+  }
+
+  th,
+  td {
+    padding: 0.75rem;
+  }
+
+  dl {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+
+  dd {
+    margin-bottom: 0.75rem;
+  }
 }
