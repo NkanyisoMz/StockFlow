@@ -107,3 +107,49 @@ export async function getOrder(
 
   return response.json()
 }
+
+export class OrderConflictError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'OrderConflictError'
+  }
+}
+
+export async function changeOrderStatus(
+  token: string,
+  orderId: number,
+  action: 'confirm' | 'cancel',
+): Promise<Order> {
+  const response = await fetch(`/api/orders/${orderId}/${action}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  if (response.status === 401) {
+    throw new UnauthorizedError()
+  }
+
+  if (response.status === 403) {
+    throw new Error('You do not have permission to change this order.')
+  }
+
+  if (response.status === 404) {
+    throw new Error('The order or a referenced product no longer exists.')
+  }
+
+  if (response.status === 409) {
+    throw new OrderConflictError(
+      action === 'confirm'
+        ? 'Confirmation failed. Stock may be insufficient, or the order is no longer pending.'
+        : 'Cancellation failed. The order is no longer pending.',
+    )
+  }
+
+  if (!response.ok) {
+    throw new Error('Unable to update the order.')
+  }
+
+  return response.json()
+}

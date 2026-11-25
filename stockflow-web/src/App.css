@@ -128,3 +128,10 @@ td button+button {
   color: white;
   border-color: #172033;
 }
+
+.order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}

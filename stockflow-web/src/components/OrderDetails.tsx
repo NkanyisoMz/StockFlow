@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { getOrder, orderStatusLabel } from '../api/orders'
+import {
+  changeOrderStatus,
+  getOrder,
+  OrderConflictError,
+  orderStatusLabel,
+} from '../api/orders'
 import type { Order } from '../api/orders'
 import { UnauthorizedError } from '../api/products'
 
@@ -18,6 +23,10 @@ export default function OrderDetails({
 }: OrderDetailsProps) {
   const [order, setOrder] = useState<Order | null>(null)
   const [error, setError] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [needsReload, setNeedsReload] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -58,9 +67,77 @@ export default function OrderDetails({
     return () => controller.abort()
   }, [token, orderId, onUnauthorized])
 
+  async function handleAction(action: 'confirm' | 'cancel') {
+    const message = action === 'confirm'
+        ? 'Confirm this order? Stock will be deducted.'
+        : 'Cancel this pending order?'
+
+    if (!window.confirm(message)) {
+        return
+    }
+
+    setActionError('')
+    setNotice('')
+    setIsSubmitting(true)
+
+    try {
+        const updatedOrder = await changeOrderStatus(token, orderId, action)
+
+        setOrder(updatedOrder)
+        setNotice(
+        action === 'confirm'
+            ? 'Order confirmed. Inventory has been updated.'
+            : 'Order cancelled. Inventory was not changed.',
+        )
+    } catch (error) {
+        if (error instanceof UnauthorizedError) {
+        onUnauthorized()
+        return
+        }
+
+        if (error instanceof OrderConflictError) {
+        try {
+            // Another request may have changed the order's saved status.
+            const latestOrder = await getOrder(
+            token,
+            orderId,
+            new AbortController().signal,
+            )
+
+            setOrder(latestOrder)
+            setActionError(error.message)
+        } catch (refreshError) {
+            if (refreshError instanceof UnauthorizedError) {
+            onUnauthorized()
+            return
+            }
+
+            setNeedsReload(true)
+            setActionError(
+            `${error.message} Return to the list and reopen the order to refresh it.`,
+            )
+        }
+
+        return
+        }
+
+        // The server may have completed the operation before connection loss.
+        setNeedsReload(true)
+        setActionError(
+        error instanceof TypeError
+            ? 'Connection lost. Return to the list and reopen the order to check its saved state before retrying.'
+            : error instanceof Error
+            ? error.message
+            : 'Unable to update the order.',
+        )
+    } finally {
+        setIsSubmitting(false)
+    }
+    }
+
   return (
     <div>
-      <button type="button" onClick={onBack}>
+      <button type="button" disabled={isSubmitting} onClick={onBack}>
         Back to orders
       </button>
 
@@ -85,6 +162,30 @@ export default function OrderDetails({
             <dt>Total</dt>
             <dd>{order.totalAmount.toFixed(2)}</dd>
           </dl>
+
+          {order.status === 0 && (
+            <div className="order-actions">
+                <button
+                type="button"
+                disabled={isSubmitting || needsReload}
+                onClick={() => void handleAction('confirm')}
+                >
+                Confirm order
+                </button>
+
+                <button
+                type="button"
+                disabled={isSubmitting || needsReload}
+                onClick={() => void handleAction('cancel')}
+                >
+                Cancel order
+                </button>
+            </div>
+            )}
+
+            {isSubmitting && <p role="status">Updating order…</p>}
+            {notice && <p role="status">{notice}</p>}
+            {actionError && <p role="alert">{actionError}</p>}
 
           <div className="table-container">
             <table>
