@@ -116,6 +116,19 @@ if (args.Contains("--migrate"))
     return;
 }
 
+if (args.Contains("--seed-demo"))
+{
+    if (!app.Configuration.GetValue<bool>("DemoData:Enabled"))
+    {
+        Console.Error.WriteLine("Demo seeding is disabled. Explicitly enable DemoData:Enabled.");
+        Environment.ExitCode = 1;
+        return;
+    }
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<StockFlowDbContext>();
+    await DemoDataSeeder.SeedAsync(db);
+    return;
+}
 if (args.Contains("--reset-password"))
 {
     if (!app.Environment.IsDevelopment())
