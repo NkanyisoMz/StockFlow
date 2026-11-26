@@ -4,11 +4,11 @@ StockFlow is an Order and Inventory Management System under active development. 
 
 The application manages products, inventory, customers, and orders. It demonstrates controller/service separation, dependency injection, relational modelling, input validation, database constraints, transactions, and concurrency control.
 
-A React + TypeScript frontend is planned.
+The React + TypeScript frontend supports internal product, inventory, customer, and order workflows.
 
-**Current status:** Core backend functionality and the baseline automated testing milestone are complete. The latest local test run passed all 81 integration test cases.
+**Current status:** Core backend and frontend workflows, authentication, and local Docker packaging are implemented. The latest local test run passed all 105 integration test cases.
 
-**Next milestone:** JWT authentication and role-based authorization.
+**Next milestone:** GitHub Actions CI/CD and cloud deployment.
 
 ## Features
 
@@ -199,11 +199,10 @@ writes bypass the API.
 | Docker Desktop | Container runtime for local integration tests |
 | Git / GitHub | Version control |
 | PowerShell / psql | Manual API and database checks |
-| React + TypeScript | Planned frontend |
+| React + TypeScript | Internal management frontend |
 | GitHub Actions | Planned CI/CD |
 
-Docker is currently used for integration-test databases. Application
-containerization and deployment are still planned.
+Docker runs integration-test databases and the complete local application stack. Cloud deployment remains planned.
 
 ## Authentication and Authorization
 
@@ -628,6 +627,126 @@ dotnet run --project StockFlow.Api
 
 Use the application URL printed in the terminal.
 
+## Run the Complete Application with Docker
+
+### Configuration
+
+Docker Desktop must be running with Linux containers. From the repository
+root, copy `.env.example` to `.env` and replace both placeholders with
+separate random values. In Git Bash, run `openssl rand -hex 32` twice.
+Do not commit `.env`; verify with `git check-ignore .env`.
+
+- `POSTGRES_PASSWORD`: container database password.
+- `JWT_KEY`: API signing key, distinct from the database password.
+
+### Build and Migrate
+
+```bash
+docker compose build
+docker compose up -d db
+docker compose run --rm api --migrate
+```
+
+The container database is separate from your original development database.
+Local records and accounts are not copied automatically. No original data
+is deleted by switching to Docker.
+
+### Account Provisioning
+
+Use an interactive PowerShell terminal from the repository root:
+
+```powershell
+$email = Read-Host "Administrator email"
+$password = Read-Host "Administrator password" -AsSecureString
+$credential = [PSCredential]::new($email, $password)
+$env:BootstrapAdmin__Email = $email
+$env:BootstrapAdmin__Password = $credential.GetNetworkCredential().Password
+try {
+    docker compose run --rm -e BootstrapAdmin__Email -e BootstrapAdmin__Password api --create-admin
+}
+finally {
+    Remove-Item Env:BootstrapAdmin__Email -ErrorAction SilentlyContinue
+    Remove-Item Env:BootstrapAdmin__Password -ErrorAction SilentlyContinue
+    Remove-Variable email, password, credential
+}
+```
+
+For Staff, use `BootstrapStaff__Email`, `BootstrapStaff__Password`, and
+`--create-staff` in the same process, with a separate email. These commands
+initialize roles and refuse to modify existing accounts automatically.
+There are no default account passwords. Environment credentials can be
+inspected while the one-off container exists; use deployment secret
+management when hosting externally.
+
+### Optional Demo Data
+
+Stop application writes before running the explicitly enabled seed command:
+
+```bash
+docker compose stop web api
+docker compose run --rm -e DemoData__Enabled=true api --seed-demo
+```
+
+It adds three products, two synthetic customers, three opening receipts,
+and one pending order with captured prices. All inserts share one transaction.
+Existing Identity accounts remain intact. If business records already exist,
+seeding is skipped: no records are deleted, merged, or overwritten. Run only
+one seed process at a time. Seeding never runs during normal startup.
+
+### Start and Verify
+
+```bash
+docker compose up -d api web
+docker compose ps
+```
+
+Open [StockFlow locally](http://localhost:8080). Nginx serves the compiled
+frontend and forwards `/api` to the API; Vite is not used in these containers.
+Only Nginx is published, bound to `127.0.0.1`; API and database ports remain internal.
+
+Verify login for Admin and Staff, then create a product, receive stock,
+create a customer/order, confirm it, and inspect the balance and history.
+
+### Persistence and Maintenance
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+Records persist in the named PostgreSQL volume. Do not use
+`docker compose down -v` unless intentionally deleting the container database.
+Changing `POSTGRES_PASSWORD` in `.env` does not update an already initialized
+database password.
+
+After code changes:
+
+```bash
+docker compose build
+docker compose run --rm api --migrate
+docker compose up -d
+```
+
+For future schema changes, plan compatibility and stop application writes
+when needed. Migrations run explicitly, not on every API startup.
+
+Troubleshoot with:
+
+```bash
+docker compose logs --tail=100 api web
+docker compose logs --tail=100 db
+```
+
+Do not publish credentials or tokens. `docker compose config` can expose
+interpolated secrets. The development-only password-reset command is
+unavailable in this stack's Production environment.
+
+### Hosting Scope
+
+This is a local HTTP stack with API HTTPS redirection explicitly disabled.
+Cloud deployment still requires HTTPS, secret management, appropriate
+trusted-proxy settings, backups, and a delivery workflow.
+
 ## Testing
 
 The baseline integration-testing milestone is complete. The latest
@@ -770,7 +889,7 @@ Replace example IDs with values returned by preceding requests.
 - [x] Regression tests for documented edge cases
 - [x] Essential direct database-constraint checks
 - [x] Concurrent-request outcome checks
-- [x] Local suite passing with 81 test cases
+- [x] Local suite passing with 105 test cases
 
 ### Authentication and Authorization
 
@@ -780,17 +899,17 @@ Replace example IDs with values returned by preceding requests.
 - [x] Authentication and permission integration tests
 
 
-### React + TypeScript Frontend — Next
+### React + TypeScript Frontend
 
-- [ ] Application setup and login
-- [ ] Product management
-- [ ] Inventory operations and movement history
-- [ ] Customer management
-- [ ] Order creation, listing, details, confirmation, and cancellation
+- [x] Application setup and login
+- [x] Product management
+- [x] Inventory operations and movement history
+- [x] Customer management
+- [x] Order creation, listing, details, confirmation, and cancellation
 
 ### Packaging and Deployment
 
-- [ ] Application Docker images and local Compose setup
+- [x] Application Docker images and local Compose setup
 - [ ] GitHub Actions build and test pipeline
 - [ ] Cloud deployment
 - [ ] Deployment configuration, backups, and operational documentation
@@ -801,9 +920,9 @@ current scope.
 
 ## Current Development Priority
 
-The JWT authentication and role-based authorization has been implemented.
-Implementation has preserved the existing business rules, database
-constraints, transaction boundaries, and row-locking behavior.
+Core frontend workflows, JWT authentication, integration tests, and local
+Docker packaging are implemented. Remaining milestones are GitHub Actions
+CI/CD, cloud deployment, and final operational documentation.
 
-Subsequent milestones are the React + TypeScript frontend, application
-containerization, GitHub Actions CI/CD, and cloud deployment.
+StockFlow remains an internal product, customer, inventory, and order
+management system; storefronts and payments are outside its scope.
