@@ -1,0 +1,47 @@
+name: stockflow
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: stockflow
+      POSTGRES_USER: stockflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockflow -d stockflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    image: stockflow-api:local
+    build:
+      context: .
+      dockerfile: StockFlow.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=stockflow;Username=stockflow;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env};GSS Encryption Mode=Disable"
+      Jwt__Issuer: StockFlow
+      Jwt__Audience: StockFlow.Client
+      Jwt__ExpirationMinutes: "15"
+      Jwt__Key: ${JWT_KEY:?Set JWT_KEY in .env}
+      Http__UseHttpsRedirection: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    image: stockflow-web:local
+    build:
+      context: .
+      dockerfile: stockflow-web/Dockerfile
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

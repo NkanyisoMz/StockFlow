@@ -103,6 +103,19 @@ builder.Services.AddScoped<JwtTokenService>();
 
 var app = builder.Build();
 
+if (args.Contains("--migrate"))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+
+    var db = scope.ServiceProvider
+        .GetRequiredService<StockFlowDbContext>();
+
+    await db.Database.MigrateAsync();
+
+    Console.WriteLine("Database migrations applied.");
+    return;
+}
+
 if (args.Contains("--reset-password"))
 {
     if (!app.Environment.IsDevelopment())
@@ -206,7 +219,12 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+if (app.Configuration.GetValue<bool>(
+    "Http:UseHttpsRedirection",
+    true))
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseAuthentication();
 
